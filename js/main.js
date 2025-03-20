@@ -10,6 +10,9 @@ class FlightSimulator {
         // Create aircraft
         this.aircraft = new Aircraft(this.sceneManager.scene);
         
+        // Make aircraft instance globally accessible for performance monitoring
+        window.aircraftInstance = this.aircraft;
+        
         // Create controls
         this.controls = new Controls(this.aircraft);
         
@@ -26,6 +29,17 @@ class FlightSimulator {
     
     animate(currentTime = 0) {
         if (!this.running) return;
+        
+        // Skip if we're in uncapped performance mode
+        if (this.sceneManager.isUncapped) {
+            requestAnimationFrame((time) => this.animate(time));
+            return;
+        }
+        
+        // Begin stats measurement
+        if (this.sceneManager.stats) {
+            this.sceneManager.stats.begin();
+        }
         
         // Calculate delta time in seconds
         const deltaTime = (currentTime - this.lastTime) / 1000;
@@ -46,6 +60,11 @@ class FlightSimulator {
             this.sceneManager.render(this.aircraft.getActiveCamera());
         }
         
+        // End stats measurement
+        if (this.sceneManager.stats) {
+            this.sceneManager.stats.end();
+        }
+        
         // Schedule the next frame
         requestAnimationFrame((time) => this.animate(time));
     }
@@ -61,6 +80,9 @@ window.addEventListener('load', () => {
     
     // Create the flight simulator
     const simulator = new FlightSimulator();
+    
+    // Make simulator instance globally accessible for performance monitoring
+    window.simulatorInstance = simulator;
     
     // Add a warning for mobile users
     if (/Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent)) {

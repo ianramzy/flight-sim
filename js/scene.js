@@ -7,6 +7,20 @@ class SceneManager {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(this.renderer.domElement);
 
+        // Setup performance monitoring
+        this.stats = new Stats();
+        this.stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
+        // Move the stats panel to bottom right
+        this.stats.dom.style.position = 'absolute';
+        this.stats.dom.style.bottom = '0px';
+        this.stats.dom.style.right = '0px';
+        this.stats.dom.style.top = 'auto';
+        this.stats.dom.style.left = 'auto';
+        document.body.appendChild(this.stats.dom);
+        
+        // Performance test button
+        this.createPerformanceTestButton();
+        
         // Add lighting mode state
         this.lightingMode = 'daytime'; // Changed default from 'sunset' to 'daytime'
         
@@ -44,6 +58,54 @@ class SceneManager {
         });
         
         document.body.appendChild(toggleButton);
+    }
+    
+    createPerformanceTestButton() {
+        // Create button to toggle performance mode
+        const perfButton = document.createElement('button');
+        perfButton.textContent = 'Uncap FPS';
+        perfButton.style.position = 'fixed';
+        perfButton.style.top = '20px';
+        perfButton.style.left = '250px'; // Position to the right of the lighting toggle
+        perfButton.style.padding = '5px 10px';
+        perfButton.style.background = 'rgba(0, 0, 0, 0.5)';
+        perfButton.style.color = 'white';
+        perfButton.style.border = '1px solid white';
+        perfButton.style.borderRadius = '0px';
+        perfButton.style.cursor = 'pointer';
+        perfButton.style.zIndex = '1000';
+        
+        // Add benchmark panel
+        this.benchmarkPanel = document.createElement('div');
+        this.benchmarkPanel.style.position = 'fixed';
+        this.benchmarkPanel.style.bottom = '20px';
+        this.benchmarkPanel.style.left = '20px';
+        this.benchmarkPanel.style.padding = '10px';
+        this.benchmarkPanel.style.background = 'rgba(0, 0, 0, 0.5)';
+        this.benchmarkPanel.style.color = 'white';
+        this.benchmarkPanel.style.border = '1px solid white';
+        this.benchmarkPanel.style.fontFamily = 'monospace';
+        this.benchmarkPanel.style.display = 'none';
+        this.benchmarkPanel.style.zIndex = '1000';
+        document.body.appendChild(this.benchmarkPanel);
+        
+        // Performance testing state
+        this.isUncapped = false;
+        this.frameCounter = 0;
+        this.lastTime = performance.now();
+        this.benchmarkData = {
+            fps: [],
+            frameTime: [],
+            startTime: 0
+        };
+        
+        // Add event listener for toggle
+        perfButton.addEventListener('click', () => {
+            this.togglePerformanceTest();
+            perfButton.textContent = this.isUncapped ? 'Cap FPS' : 'Uncap FPS';
+        });
+        
+        document.body.appendChild(perfButton);
     }
     
     toggleLightingMode() {
@@ -289,6 +351,7 @@ class SceneManager {
         const terrainGeometry = new THREE.BufferGeometry();
         const positions = [];
         const colors = [];
+        const uvs = []; // Add UVs for texture mapping
         
         // Use a higher height scale for steeper hills
         const heightScale = 250; // Increased for more dramatic hills
@@ -309,12 +372,15 @@ class SceneManager {
                 // Add position (note: in THREE.js, Y is up)
                 positions.push(xPos, height, zPos);
                 
+                // Add UV coordinates for texture mapping
+                uvs.push(x / (resolution - 1), z / (resolution - 1));
+                
                 // Add color based on height for better visual cues
                 const heightRatio = height / heightScale;
-                // Colors for Hollywood hills - brown for lower parts, greener for higher
-                const r = 0.5 - heightRatio * 0.2; // Less red for higher areas
-                const g = 0.4 + heightRatio * 0.3; // More green for higher areas
-                const b = 0.2 + heightRatio * 0.1; // Slight blue increase for higher areas
+                // Apply more subtle color variations that won't overpower the texture
+                const r = 0.95 - heightRatio * 0.05; // Very subtle variation
+                const g = 0.95 + heightRatio * 0.05; // Very subtle variation
+                const b = 0.95 - heightRatio * 0.05; // Very subtle variation
                 colors.push(r, g, b);
             }
         }
@@ -338,6 +404,7 @@ class SceneManager {
         terrainGeometry.setIndex(indices);
         terrainGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         terrainGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        terrainGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
         terrainGeometry.computeVertexNormals();
         
         // Track lake positions
@@ -366,10 +433,24 @@ class SceneManager {
         // Create terrain material with vertex colors for better visual cues
         const terrainMaterial = new THREE.MeshStandardMaterial({
             vertexColors: true,  // Use vertex colors
-            roughness: 0.8,
-            metalness: 0.2,
-            flatShading: true    // Makes the hills more visible with sharp edges
+            roughness: 0.9,      // Increased roughness for grass
+            metalness: 0.0,      // No metalness for natural look
+            flatShading: false,  // Smooth shading for more natural look
+            map: null            // Will set this later
         });
+        
+        // Add grass texture to the terrain - using a different URL for better visibility
+        const textureLoader = new THREE.TextureLoader();
+        const grassTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/terrain/grasslight-big.jpg');
+        grassTexture.wrapS = THREE.RepeatWrapping;
+        grassTexture.wrapT = THREE.RepeatWrapping;
+        // Make texture repeat much more frequently for visibility on the hills
+        grassTexture.repeat.set(200, 200); // Much higher repeat value for better visibility
+        
+        // Apply the texture
+        terrainMaterial.map = grassTexture;
+        terrainMaterial.color = new THREE.Color(0xffffff); // Set color to white to let texture show through
+        terrainMaterial.needsUpdate = true;
         
         // Create and position the terrain mesh
         const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
@@ -386,6 +467,11 @@ class SceneManager {
             roughness: 0.9,
             metalness: 0.0
         });
+        
+        // Apply the same grass texture to the ground plane
+        groundMaterial.map = grassTexture;
+        groundMaterial.map.repeat.set(groundSize/25, groundSize/25); // Different repeat value for the ground
+        groundMaterial.needsUpdate = true;
         
         const ground = new THREE.Mesh(groundGeometry, groundMaterial);
         ground.rotation.x = -Math.PI / 2;
@@ -816,6 +902,93 @@ class SceneManager {
     }
 
     render(camera) {
+        if (!camera) return;
+        
+        // When in performance test mode, disable vsync
+        if (this.isUncapped) {
+            // These settings help break through the vsync/requestAnimationFrame limit
+            this.renderer.setPixelRatio(window.devicePixelRatio || 1);
+            this.renderer.setSize(window.innerWidth, window.innerHeight, false); // false to avoid auto-settings
+        }
+        
         this.renderer.render(this.scene, camera);
+    }
+
+    togglePerformanceTest() {
+        this.isUncapped = !this.isUncapped;
+        if (this.isUncapped) {
+            // Start performance test
+            this.benchmarkData = {
+                fps: [],
+                frameTime: [],
+                startTime: performance.now()
+            };
+            this.renderer.setAnimationLoop(null); // Disable default animation loop
+            this.uncapFrames();
+            this.benchmarkPanel.style.display = 'block';
+        } else {
+            // End test
+            this.benchmarkPanel.style.display = 'none';
+        }
+    }
+    
+    uncapFrames() {
+        if (!this.isUncapped) return;
+        
+        this.stats.begin();
+        
+        // Get current time
+        const now = performance.now();
+        const elapsed = now - this.lastTime;
+        this.lastTime = now;
+        
+        // Calculate FPS
+        const fps = 1000 / elapsed;
+        
+        // Store data
+        this.frameCounter++;
+        this.benchmarkData.fps.push(fps);
+        this.benchmarkData.frameTime.push(elapsed);
+        
+        // Update benchmark panel every ~10 frames
+        if (this.frameCounter % 10 === 0) {
+            const avgFps = this.benchmarkData.fps.slice(-100).reduce((sum, fps) => sum + fps, 0) / 
+                           Math.min(this.benchmarkData.fps.length, 100);
+            const minFps = Math.min(...this.benchmarkData.fps.slice(-100));
+            const maxFps = Math.max(...this.benchmarkData.fps.slice(-100));
+            
+            this.benchmarkPanel.innerHTML = `
+                <div>Current FPS: ${fps.toFixed(1)}</div>
+                <div>Avg FPS: ${avgFps.toFixed(1)}</div>
+                <div>Min FPS: ${minFps.toFixed(1)}</div>
+                <div>Max FPS: ${maxFps.toFixed(1)}</div>
+                <div>Frame time: ${elapsed.toFixed(2)}ms</div>
+                <div>Test time: ${((now - this.benchmarkData.startTime)/1000).toFixed(0)}s</div>
+            `;
+        }
+        
+        // Update aircraft if available
+        if (window.aircraftInstance) {
+            // Update controls
+            if (window.simulatorInstance && window.simulatorInstance.controls) {
+                window.simulatorInstance.controls.update();
+            }
+            
+            // Update aircraft with proper delta time
+            window.aircraftInstance.update(Math.min(elapsed/1000, 0.1)); // Cap delta time to avoid physics issues
+            
+            // Update UI
+            if (window.simulatorInstance && window.simulatorInstance.ui) {
+                window.simulatorInstance.ui.update(window.aircraftInstance, now);
+            }
+            
+            // Render scene
+            this.render(window.aircraftInstance.getActiveCamera());
+        }
+        
+        this.stats.end();
+        
+        // Use setTimeout with 0ms delay to bypass vsync
+        setTimeout(() => this.uncapFrames(), 0);
     }
 } 
