@@ -147,8 +147,12 @@ class UIControls {
         const controlsList = [
             { key: 'W / S', action: 'Pitch Down / Up' },
             { key: 'A / D', action: 'Yaw Left / Right' },
-            { key: 'Shift', action: 'Increase Throttle' },
-            { key: 'Ctrl', action: 'Decrease Throttle' }
+            { key: 'Q / E', action: 'Roll Left / Right' },
+            { key: 'X / Z', action: 'Increase / Decrease Throttle' },
+            { key: 'Space', action: 'Fire Weapon' },
+            { key: 'Mouse', action: 'Control Pitch and Yaw' },
+            { key: 'Escape', action: 'Release Mouse Control' },
+            { key: 'Click', action: 'Enable Mouse Control' }
         ];
         
         // Add each control to the div
@@ -204,6 +208,55 @@ class UIControls {
         pitchInversionDiv.appendChild(pitchInversionLabel);
         pitchInversionDiv.appendChild(pitchInversionCheckbox);
         controlsDiv.appendChild(pitchInversionDiv);
+        
+        // Add mouse control toggle
+        const mouseControlDiv = document.createElement('div');
+        mouseControlDiv.style.marginTop = '15px';
+        mouseControlDiv.style.padding = '5px';
+        mouseControlDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
+        mouseControlDiv.style.borderRadius = '5px';
+        
+        const mouseControlLabel = document.createElement('label');
+        mouseControlLabel.textContent = 'Enable Mouse Control: ';
+        mouseControlLabel.style.marginRight = '10px';
+        
+        const mouseControlCheckbox = document.createElement('input');
+        mouseControlCheckbox.type = 'checkbox';
+        mouseControlCheckbox.id = 'enable-mouse';
+        
+        // Initialize the checkbox state from localStorage if available
+        const mouseControlEnabledStored = localStorage.getItem('mouseControlEnabled');
+        const mouseControlEnabled = mouseControlEnabledStored ? mouseControlEnabledStored === 'true' : false;
+        mouseControlCheckbox.checked = mouseControlEnabled;
+        
+        // Set the global setting
+        window.mouseControlEnabled = mouseControlEnabled;
+        
+        // Add event listener to the checkbox
+        mouseControlCheckbox.addEventListener('change', (event) => {
+            const isEnabled = event.target.checked;
+            window.mouseControlEnabled = isEnabled;
+            localStorage.setItem('mouseControlEnabled', isEnabled);
+            
+            // Show or hide the mouse overlay based on setting
+            const overlay = document.getElementById('mouse-lock-overlay');
+            if (overlay) {
+                if (isEnabled) {
+                    overlay.classList.add('active'); // Show overlay to prompt for click
+                } else {
+                    overlay.classList.remove('active'); // Hide overlay
+                    
+                    // If mouse is currently locked, release it
+                    if (document.pointerLockElement) {
+                        document.exitPointerLock();
+                    }
+                }
+            }
+        });
+        
+        mouseControlDiv.appendChild(mouseControlLabel);
+        mouseControlDiv.appendChild(mouseControlCheckbox);
+        controlsDiv.appendChild(mouseControlDiv);
         
         // Remove the original controls info element if it exists
         const controlsInfo = document.getElementById('controls-info');

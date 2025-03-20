@@ -43,7 +43,7 @@ class Aircraft {
         // Shooting mechanics
         this.projectiles = [];
         this.lastShotTime = 0;
-        this.shootingCooldown = 83; // Halved again from 167ms to 83ms for double fire rate
+        this.shootingCooldown = 42; // Doubled fire rate from 83ms to 42ms
     }
     
     setupCameras() {
@@ -94,6 +94,10 @@ class Aircraft {
         cockpit.position.set(0, 1, 0);
         this.model.add(cockpit);
         
+        // Create a group for the wings so they can be rotated independently
+        this.wingsGroup = new THREE.Group();
+        this.model.add(this.wingsGroup);
+        
         // Add wings - sleeker swept-back design
         const wingGeometry = new THREE.BoxGeometry(22, 0.3, 4);
         // Modify wing vertices to make them swept-back
@@ -120,7 +124,7 @@ class Aircraft {
         });
         const wings = new THREE.Mesh(wingGeometry, wingMaterial);
         wings.position.set(0, 0, 0);
-        this.model.add(wings);
+        this.wingsGroup.add(wings);
         
         // Add wingtips - vertical stabilizers at the ends of wings
         const wingtipGeometry = new THREE.BoxGeometry(0.5, 1.2, 2);
@@ -133,12 +137,32 @@ class Aircraft {
         // Left wingtip
         const leftWingtip = new THREE.Mesh(wingtipGeometry, wingtipMaterial);
         leftWingtip.position.set(-11, 0.5, -2);
-        this.model.add(leftWingtip);
+        this.wingsGroup.add(leftWingtip);
         
         // Right wingtip
         const rightWingtip = new THREE.Mesh(wingtipGeometry, wingtipMaterial);
         rightWingtip.position.set(11, 0.5, -2);
-        this.model.add(rightWingtip);
+        this.wingsGroup.add(rightWingtip);
+        
+        // Add guns under the wings
+        const gunBarrelGeometry = new THREE.CylinderGeometry(0.3, 0.3, 3, 8);
+        const gunHousingGeometry = new THREE.BoxGeometry(0.8, 0.8, 1.4);
+        const gunMaterial = new THREE.MeshStandardMaterial({
+            color: 0x111111, // Almost black
+            metalness: 0.9,
+            roughness: 0.3
+        });
+        
+        // Centered gun
+        this.centerGun = new THREE.Group();
+        const gunBarrel = new THREE.Mesh(gunBarrelGeometry, gunMaterial);
+        gunBarrel.rotation.x = Math.PI / 2;
+        gunBarrel.position.z = 1.2;
+        const gunHousing = new THREE.Mesh(gunHousingGeometry, gunMaterial);
+        this.centerGun.add(gunBarrel);
+        this.centerGun.add(gunHousing);
+        this.centerGun.position.set(0, -0.8, 3); // Position at nose of aircraft
+        this.model.add(this.centerGun);
         
         // Add tail - more elaborate tail section
         const tailGeometry = new THREE.BoxGeometry(7, 0.3, 3);
@@ -264,16 +288,52 @@ class Aircraft {
         
         this.lastShotTime = currentTime;
         
-        // Create cylindrical projectile instead of sphere
+        // Create single bullet from center gun
+        this.createProjectile(this.centerGun, currentTime);
+        
+        // Add effects when shooting (if the effects system is available)
+        if (window.simulatorInstance && window.simulatorInstance.effects) {
+            // Get the effects system
+            const effects = window.simulatorInstance.effects;
+            
+            try {
+                // Create muzzle flash effect with aircraft velocity
+                const flashInfo = effects.createMuzzleFlash(this.centerGun, this.velocity);
+                
+                // No longer creating bullet trail/smoke effects
+                
+                // Add camera shake only if muzzle flash was created successfully
+                if (flashInfo) {
+                    const activeCamera = this.getActiveCamera();
+                    if (activeCamera === this.firstPersonCamera) {
+                        // More intense shake in first person
+                        effects.addCameraShake(0.4);
+                    } else {
+                        // Less intense shake in third person
+                        effects.addCameraShake(0.2);
+                    }
+                }
+            } catch (error) {
+                console.warn("Error creating shooting effects:", error);
+            }
+        }
+    }
+    
+    createProjectile(gun, currentTime) {
+        // Create cylindrical projectile
         const projectileGeometry = new THREE.CylinderGeometry(0.5, 0.5, 4, 8);
         projectileGeometry.rotateX(Math.PI / 2); // Rotate to align with direction of travel
         const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
         const projectile = new THREE.Mesh(projectileGeometry, projectileMaterial);
         
-        // Calculate spawn position (in front of the aircraft)
-        const spawnOffset = new THREE.Vector3(0, 0, 10);
+        // Get the world position of the gun
+        const gunWorldPosition = new THREE.Vector3();
+        gun.getWorldPosition(gunWorldPosition);
+        
+        // Calculate spawn position (at the gun position)
+        const spawnOffset = new THREE.Vector3(0, 0, 2); // Adjust to be in front of gun barrel
         spawnOffset.applyEuler(this.rotation);
-        const spawnPosition = this.position.clone().add(spawnOffset);
+        const spawnPosition = gunWorldPosition.clone().add(spawnOffset);
         projectile.position.copy(spawnPosition);
         
         // Calculate projectile direction (forward vector of the aircraft)
@@ -289,7 +349,7 @@ class Aircraft {
             direction: direction,
             speed: 1200, // Doubled again from 600 to 1200 meters per second
             distance: 0,
-            maxDistance: 1000, // Maximum travel distance
+            maxDistance: 2000, // Doubled from 1000 to 2000 meters
             createdAt: currentTime
         };
         
@@ -329,10 +389,23 @@ class Aircraft {
     update(deltaTime) {
         // Update propeller rotations based on throttle
         if (this.leftPropeller) {
-            this.leftPropeller.rotation.x += this.controls.throttle * 20 * deltaTime;
+            this.leftPropeller.rotation.z += this.controls.throttle * 20 * deltaTime;
         }
         if (this.rightPropeller) {
-            this.rightPropeller.rotation.x += this.controls.throttle * 20 * deltaTime;
+            this.rightPropeller.rotation.z += this.controls.throttle * 20 * deltaTime;
+        }
+        
+        // Update wing animations based on controls
+        if (this.wingsGroup) {
+            // Roll animation - tilt the wings in response to roll controls
+            const targetRollAngle = this.controls.roll * 0.2; // Max 0.2 radians (~11.5 degrees) of roll
+            const currentRollAngle = this.wingsGroup.rotation.z;
+            this.wingsGroup.rotation.z = THREE.MathUtils.lerp(currentRollAngle, targetRollAngle, 0.1);
+            
+            // Pitch animation - flex the wings slightly when pitching
+            const targetPitchFlex = this.controls.pitch * 0.05; // Slight flex of wings during pitch
+            const currentPitchFlex = this.wingsGroup.rotation.x;
+            this.wingsGroup.rotation.x = THREE.MathUtils.lerp(currentPitchFlex, targetPitchFlex, 0.1);
         }
         
         // Calculate forces

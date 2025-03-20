@@ -4,6 +4,7 @@ import { Aircraft } from './aircraft.js';
 import { AIAircraft } from './aiAircraft.js';
 import { Controls } from './controls.js';
 import { UI } from './ui.js';
+import { EffectsSystem } from './effects.js';
 
 class FlightSimulator {
     constructor() {
@@ -12,6 +13,9 @@ class FlightSimulator {
         
         // Create physics
         this.physics = new Physics();
+        
+        // Create effects system
+        this.effects = new EffectsSystem(this.sceneManager.scene);
         
         // Create aircraft
         this.aircraft = new Aircraft(this.sceneManager.scene);
@@ -74,6 +78,12 @@ class FlightSimulator {
                 // Simple distance-based collision detection (sphere vs sphere)
                 const distance = projectilePos.distanceTo(balloonPos);
                 if (distance < 25) { // Balloon radius is around 20
+                    // Balloons don't have velocity, but we can use a small upward drift
+                    const balloonVelocity = new THREE.Vector3(0, 2, 0);
+                    
+                    // Create hit effect at collision point, passing the balloon velocity
+                    this.effects.createHitEffect(balloonPos, false, balloonVelocity);
+                    
                     // Award 1 point
                     this.ui.addPoints(1);
                     
@@ -101,6 +111,9 @@ class FlightSimulator {
                 // Simple distance-based collision detection
                 const distance = projectilePos.distanceTo(aiPos);
                 if (distance < 15) { // Aircraft size is smaller than balloon
+                    // Create hit effect at collision point, passing the AI velocity
+                    this.effects.createHitEffect(aiPos, true, ai.velocity);
+                    
                     // Award 5 points
                     this.ui.addPoints(5);
                     
@@ -139,14 +152,26 @@ class FlightSimulator {
                 ai.update(deltaTime);
             }
             
+            // Report AI aircraft bounds status (consolidated every 5 seconds)
+            AIAircraft.reportBoundsStatus(this.aiAircraft);
+            
             // Check for collisions between projectiles and targets
             this.checkProjectileCollisions();
             
             // Update UI
             this.ui.update(this.aircraft, currentTime);
             
+            // Update visual effects
+            const camera = this.aircraft.getActiveCamera();
+            const cameraState = this.effects.update(deltaTime, camera);
+            
             // Render the scene
-            this.sceneManager.render(this.aircraft.getActiveCamera());
+            this.sceneManager.render(camera);
+            
+            // Restore camera rotation after shake
+            if (cameraState && cameraState.original) {
+                this.effects.restoreCameraRotation(camera, cameraState.original);
+            }
         }
         
         // Schedule the next frame
@@ -162,11 +187,30 @@ window.addEventListener('load', () => {
         return;
     }
     
+    // Check for Pointer Lock API support
+    if (!('pointerLockElement' in document)) {
+        alert('Your browser doesn\'t support Pointer Lock API. Mouse controls may not work properly.');
+    }
+    
     // Create the flight simulator
     const simulator = new FlightSimulator();
     
     // Make simulator instance globally accessible for performance monitoring
     window.simulatorInstance = simulator;
+    
+    // Initialize mouse control state from localStorage if available
+    const mouseControlEnabledStored = localStorage.getItem('mouseControlEnabled');
+    window.mouseControlEnabled = mouseControlEnabledStored ? mouseControlEnabledStored === 'true' : false;
+    
+    // Show mouse lock overlay only if mouse control is enabled
+    const mouseLockOverlay = document.getElementById('mouse-lock-overlay');
+    if (mouseLockOverlay) {
+        if (window.mouseControlEnabled) {
+            mouseLockOverlay.classList.add('active');
+        } else {
+            mouseLockOverlay.classList.remove('active');
+        }
+    }
     
     // Add a warning for mobile users
     if (/Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent)) {
@@ -184,7 +228,7 @@ window.addEventListener('load', () => {
         mobileWarning.style.width = '80%';
         mobileWarning.innerHTML = `
             <h2>Best Experienced on Desktop</h2>
-            <p>This flight simulator is designed for keyboard controls and may not work properly on mobile devices.</p>
+            <p>This flight simulator is designed for keyboard and mouse controls and may not work properly on mobile devices.</p>
             <button id="continue-anyway" style="padding: 10px; margin-top: 10px; background: #4CAF50; border: none; color: white; cursor: pointer; border-radius: 5px;">Continue Anyway</button>
         `;
         document.body.appendChild(mobileWarning);
@@ -204,16 +248,10 @@ window.addEventListener('load', () => {
                 simulator.aircraft.controls.pitch = 1;
                 break;
             case 'a':
-                simulator.aircraft.controls.yaw = -1;
-                break;
-            case 'd':
                 simulator.aircraft.controls.yaw = 1;
                 break;
-            case 'shift':
-                simulator.aircraft.controls.throttle = Math.min(1, simulator.aircraft.controls.throttle + 0.1);
-                break;
-            case 'control':
-                simulator.aircraft.controls.throttle = Math.max(0, simulator.aircraft.controls.throttle - 0.1);
+            case 'd':
+                simulator.aircraft.controls.yaw = -1;
                 break;
             case 'enter':
                 simulator.aircraft.shoot();

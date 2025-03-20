@@ -46,6 +46,13 @@ class AIAircraft extends Aircraft {
         // Force additional properties required by parent class
         this.modelLoaded = true;
         this.propeller = null; // We'll create this in loadModel
+        
+        // Periodic bounds reporting
+        this.lastBoundsReport = 0;
+        this.boundsReportInterval = 5000; // 5 seconds
+        
+        // Initialize plane status 
+        this.isOutOfBounds = false;
     }
     
     // Completely override the parent's loadModel method with a simpler implementation
@@ -118,25 +125,73 @@ class AIAircraft extends Aircraft {
         // Set throttle to a constant value
         this.controls.throttle = 0.7;
         
-        // Check if aircraft is out of bounds
-        this.checkBounds();
-        
-        // Check if it's time to change direction
+        // Update direction change timer
         this.lastDirectionChange += deltaTime;
         if (this.lastDirectionChange >= this.changeDirectionInterval) {
             this.selectNewTarget();
             this.lastDirectionChange = 0;
             this.changeDirectionInterval = 5 + Math.random() * 10;
         }
+    
+        // Check if position or other values are NaN
+        this.validateVectors();
         
-        // Steer toward target
+        // Apply acceleration to velocity
+        this.velocity.add(this.acceleration.clone().multiplyScalar(deltaTime));
+        
+        // Apply drag (air resistance)
+        const drag = 0.01;
+        this.velocity.multiplyScalar(1 - drag);
+        
+        // Limit max speed
+        const maxSpeed = 300 + this.controls.throttle * 200; // Throttle affects max speed
+        const currentSpeed = this.velocity.length();
+        if (currentSpeed > maxSpeed) {
+            this.velocity.normalize().multiplyScalar(maxSpeed);
+        }
+        
+        // Update position based on velocity
+        this.position.add(this.velocity.clone().multiplyScalar(deltaTime));
+        
+        // Check terrain bounds and adjust position/velocity if needed
+        this.checkBounds();
+        
+        // Steer toward the current target
         this.steerTowardTarget(deltaTime);
         
-        // Update physics ourselves instead of calling super.update
-        this.updatePhysics(deltaTime);
+        // Update the model position and rotation
+        if (this.model) {
+            // Update position
+            this.model.position.copy(this.position);
+            
+            // Update rotation - face the direction of travel
+            if (this.velocity.length() > 0.1) {
+                // Calculate rotation from velocity vector
+                const direction = this.velocity.clone().normalize();
+                
+                // Set model rotation to match direction of travel, with banking
+                this.model.rotation.set(
+                    -this.controls.pitch * 0.4, // Pitch based on controls
+                    Math.atan2(direction.x, direction.z), // Yaw to face direction
+                    this.controls.roll * 0.6 // Roll based on controls
+                );
+            }
+            
+            // Validate model transform to prevent NaN
+            this.validateModelTransform();
+        }
         
-        // Update model position and rotation
-        this.updateModel(deltaTime);
+        // Update propellers if they exist
+        if (this.propeller) {
+            this.propeller.rotation.x += this.controls.throttle * 15 * deltaTime;
+        }
+        
+        // Update last report time for each aircraft
+        const now = performance.now();
+        if (now - this.lastBoundsReport >= this.boundsReportInterval) {
+            this.lastBoundsReport = now;
+            console.log(`AI Aircraft Status: ${this.isOutOfBounds ? 'Out of bounds' : 'In bounds'}`);
+        }
     }
     
     // Custom physics update instead of using parent class
@@ -162,7 +217,7 @@ class AIAircraft extends Aircraft {
         
         // Apply simplified drag
         const speed = this.velocity.length();
-        const drag = 0.01 * speed * speed;
+        const drag = 0.5 * speed * speed;
         const dragDirection = this.velocity.clone().normalize().negate();
         this.acceleration.addScaledVector(dragDirection, drag);
         
@@ -254,57 +309,173 @@ class AIAircraft extends Aircraft {
     
     checkBounds() {
         // Check if aircraft is going to leave terrain bounds
-        const margin = 500; // Turn margin before reaching the boundary
+        const margin = 1200; // Increased from 800 to 1200
+        let needsNewTarget = false;
+        
+        // Force immediate position correction if aircraft is outside bounds
+        if (this.position.x < this.terrainBounds.minX) {
+            this.position.x = this.terrainBounds.minX + 100;
+            this.velocity.x = Math.abs(this.velocity.x) * 0.8; // Stronger bounce back
+            needsNewTarget = true;
+        } else if (this.position.x > this.terrainBounds.maxX) {
+            this.position.x = this.terrainBounds.maxX - 100;
+            this.velocity.x = -Math.abs(this.velocity.x) * 0.8; // Stronger bounce back
+            needsNewTarget = true;
+        }
+        
+        if (this.position.z < this.terrainBounds.minZ) {
+            this.position.z = this.terrainBounds.minZ + 100;
+            this.velocity.z = Math.abs(this.velocity.z) * 0.8; // Stronger bounce back
+            needsNewTarget = true;
+        } else if (this.position.z > this.terrainBounds.maxZ) {
+            this.position.z = this.terrainBounds.maxZ - 100;
+            this.velocity.z = -Math.abs(this.velocity.z) * 0.8; // Stronger bounce back
+            needsNewTarget = true;
+        }
         
         // Check if aircraft is getting close to boundaries
-        if (this.position.x < this.terrainBounds.minX + margin || 
-            this.position.x > this.terrainBounds.maxX - margin || 
-            this.position.z < this.terrainBounds.minZ + margin || 
-            this.position.z > this.terrainBounds.maxZ - margin) {
-            // If close to boundary, turn back toward center
+        const distanceToMinX = this.position.x - this.terrainBounds.minX;
+        const distanceToMaxX = this.terrainBounds.maxX - this.position.x;
+        const distanceToMinZ = this.position.z - this.terrainBounds.minZ;
+        const distanceToMaxZ = this.terrainBounds.maxZ - this.position.z;
+        
+        // Define warning levels for increasing urgency
+        const warningLevel3 = margin; // First warning level
+        const warningLevel2 = margin * 0.6; // Second warning level
+        const warningLevel1 = margin * 0.3; // Most urgent level
+        
+        if (distanceToMinX < warningLevel3 || 
+            distanceToMaxX < warningLevel3 || 
+            distanceToMinZ < warningLevel3 || 
+            distanceToMaxZ < warningLevel3) {
+            
+            // If close to boundary, turn back toward center with increasing urgency
+            if (distanceToMinX < warningLevel1 || 
+                distanceToMaxX < warningLevel1 || 
+                distanceToMinZ < warningLevel1 || 
+                distanceToMaxZ < warningLevel1) {
+                
+                // Level 1 warning (most urgent) - Immediate target toward center, higher turn rate
+                this.targetPosition.x = 0;
+                this.targetPosition.z = 0;
+                this.targetPosition.y = this.position.y;
+                this.turnRate = 2.0; // Maximum turn rate for urgent correction
+                needsNewTarget = true;
+                
+            } else if (distanceToMinX < warningLevel2 || 
+                      distanceToMaxX < warningLevel2 || 
+                      distanceToMinZ < warningLevel2 || 
+                      distanceToMaxZ < warningLevel2) {
+                
+                // Level 2 warning - bias target heavily toward center, increased turn rate
+                this.selectNewTarget(); // Get a new target first
+                
+                // Apply strong bias toward center
+                const centerBias = 0.8; // 80% bias toward center
+                this.targetPosition.x = this.targetPosition.x * (1 - centerBias);
+                this.targetPosition.z = this.targetPosition.z * (1 - centerBias);
+                
+                // Increase turn rate
+                this.turnRate = 1.5;
+                
+            } else {
+                // Level 3 warning - just ensure target is within safe bounds with new target
+                needsNewTarget = true;
+            }
+        }
+        
+        // If needed, update target
+        if (needsNewTarget) {
             this.selectNewTarget();
         }
         
         // Ensure the plane stays within the altitude constraints
         if (this.position.y < this.terrainBounds.minY) {
-            this.position.y = this.terrainBounds.minY;
-            this.velocity.y = Math.max(0, this.velocity.y); // Prevent downward velocity
+            this.position.y = this.terrainBounds.minY + 50;
+            this.velocity.y = Math.abs(this.velocity.y) * 0.8; // Bounce upward
+            this.targetPosition.y = this.terrainBounds.minY + 400; // Target higher altitude
         } else if (this.position.y > this.terrainBounds.maxY) {
-            this.position.y = this.terrainBounds.maxY;
-            this.velocity.y = Math.min(0, this.velocity.y); // Prevent upward velocity
+            this.position.y = this.terrainBounds.maxY - 50;
+            this.velocity.y = -Math.abs(this.velocity.y) * 0.8; // Bounce downward
+            this.targetPosition.y = this.terrainBounds.maxY - 400; // Target lower altitude
         }
+        
+        // Update out of bounds status
+        this.isOutOfBounds = this.position.x < this.terrainBounds.minX || this.position.x > this.terrainBounds.maxX ||
+                             this.position.z < this.terrainBounds.minZ || this.position.z > this.terrainBounds.maxZ;
     }
     
     selectNewTarget() {
-        // Generate a new random target within terrain bounds
-        // Use a margin to keep aircraft away from the edges
-        const margin = 1000;
+        // Generate a new random target within terrain bounds with larger safety margin
+        const margin = 1500; // Increased from 1000 to 1500
         
-        this.targetPosition.set(
-            (Math.random() - 0.5) * (this.terrainBounds.maxX - this.terrainBounds.minX - 2 * margin) + margin,
-            this.terrainBounds.minY + Math.random() * (this.terrainBounds.maxY - this.terrainBounds.minY),
-            (Math.random() - 0.5) * (this.terrainBounds.maxZ - this.terrainBounds.minZ - 2 * margin) + margin
-        );
+        // Create target position with safe margins from boundaries
+        const safeMinX = this.terrainBounds.minX + margin;
+        const safeMaxX = this.terrainBounds.maxX - margin;
+        const safeMinZ = this.terrainBounds.minZ + margin;
+        const safeMaxZ = this.terrainBounds.maxZ - margin;
         
-        // If the aircraft is close to a boundary, make it turn toward the center
-        if (this.position.x < this.terrainBounds.minX + margin) {
-            this.targetPosition.x = this.position.x + margin * 2;
-        } else if (this.position.x > this.terrainBounds.maxX - margin) {
-            this.targetPosition.x = this.position.x - margin * 2;
+        // Check if aircraft is currently outside safe bounds
+        const isOutsideSafeX = this.position.x < safeMinX || this.position.x > safeMaxX;
+        const isOutsideSafeZ = this.position.z < safeMinZ || this.position.z > safeMaxZ;
+        
+        // Update out of bounds status
+        this.isOutOfBounds = isOutsideSafeX || isOutsideSafeZ;
+        
+        // If aircraft is outside safe bounds, target directly toward center
+        if (this.isOutOfBounds) {
+            // Calculate vector toward center
+            const centerX = 0;
+            const centerZ = 0;
+            
+            // Target position is between current position and center, but within bounds
+            const targetX = this.position.x + (centerX - this.position.x) * 0.5;
+            const targetZ = this.position.z + (centerZ - this.position.z) * 0.5;
+            
+            // Calculate a random but safe altitude
+            const targetY = this.terrainBounds.minY + 400 + 
+                          Math.random() * (this.terrainBounds.maxY - this.terrainBounds.minY - 800);
+            
+            // Set target position, ensuring it's within the safe bounds
+            this.targetPosition.x = Math.max(safeMinX, Math.min(safeMaxX, targetX));
+            this.targetPosition.y = targetY;
+            this.targetPosition.z = Math.max(safeMinZ, Math.min(safeMaxZ, targetZ));
+            
+            // Increase turn rate for faster correction when outside bounds
+            this.turnRate = Math.min(this.turnRate * 1.5, 2.0);
+            
+            // No logging here - we'll do it in the update method
+        } else {
+            // Normal targeting within safe bounds
+            // Ensure X and Z coordinates are within safe bounds
+            let targetX = safeMinX + Math.random() * (safeMaxX - safeMinX);
+            let targetZ = safeMinZ + Math.random() * (safeMaxZ - safeMinZ);
+            
+            // Biased target selection toward center of map
+            if (Math.random() < 0.3) {
+                // 30% chance to target more toward center
+                const centerBias = 0.4 + Math.random() * 0.4; // 40-80% bias toward center
+                targetX = targetX * (1 - centerBias) + centerBias * 0;
+                targetZ = targetZ * (1 - centerBias) + centerBias * 0;
+            }
+            
+            // Ensure Y coordinate is within valid altitude range with safe margins
+            let targetY = this.terrainBounds.minY + 300 + 
+                          Math.random() * (this.terrainBounds.maxY - this.terrainBounds.minY - 600);
+            
+            // Set the target position
+            this.targetPosition.set(targetX, targetY, targetZ);
+            
+            // Reset turn rate to normal
+            this.turnRate = 0.5 + Math.random() * 0.5;
         }
         
-        if (this.position.z < this.terrainBounds.minZ + margin) {
-            this.targetPosition.z = this.position.z + margin * 2;
-        } else if (this.position.z > this.terrainBounds.maxZ - margin) {
-            this.targetPosition.z = this.position.z - margin * 2;
-        }
-        
-        // If too low or too high, adjust target altitude
-        if (this.position.y < this.terrainBounds.minY + 100) {
-            this.targetPosition.y = this.terrainBounds.minY + 300; // Target higher altitude
-        } else if (this.position.y > this.terrainBounds.maxY - 100) {
-            this.targetPosition.y = this.terrainBounds.maxY - 300; // Target lower altitude
-        }
+        // FINAL SAFETY CHECK: Ensure target is strictly within terrain bounds
+        // This is an absolute guarantee that the target is valid
+        this.targetPosition.x = Math.max(safeMinX, Math.min(safeMaxX, this.targetPosition.x));
+        this.targetPosition.y = Math.max(this.terrainBounds.minY + 300, 
+                               Math.min(this.terrainBounds.maxY - 300, this.targetPosition.y));
+        this.targetPosition.z = Math.max(safeMinZ, Math.min(safeMaxZ, this.targetPosition.z));
     }
     
     steerTowardTarget(deltaTime) {
@@ -379,13 +550,34 @@ class AIAircraft extends Aircraft {
     
     // Method to completely reset this aircraft if needed
     resetToSafeState() {
-        // Reset position, rotation, and velocity to safe values
-        this.position.set(
-            (Math.random() - 0.5) * (this.terrainBounds.maxX - this.terrainBounds.minX - 2000) + 1000,
-            this.terrainBounds.minY + 500,
-            (Math.random() - 0.5) * (this.terrainBounds.maxZ - this.terrainBounds.minZ - 2000) + 1000
+        // Reset position to a guaranteed safe area (away from boundaries)
+        const safeMargin = 3000; // Ensure aircraft is well within bounds
+        
+        // Use a radius from center for more central positioning
+        const centerX = 0;
+        const centerZ = 0;
+        const maxRadius = Math.min(
+            this.terrainBounds.maxX - safeMargin, 
+            this.terrainBounds.maxZ - safeMargin
         );
         
+        // Position in a random direction from center, but not too close to center either
+        const minRadius = 1000; // Minimum distance from center
+        const radius = minRadius + Math.random() * (maxRadius - minRadius);
+        const angle = Math.random() * Math.PI * 2;
+        
+        // Calculate position
+        const x = centerX + Math.cos(angle) * radius;
+        const z = centerZ + Math.sin(angle) * radius;
+        
+        // Set position
+        this.position.set(
+            x, 
+            this.terrainBounds.minY + 500 + Math.random() * 500,
+            z
+        );
+        
+        // Reset other properties
         this.rotation.set(0, 0, 0, 'YXZ');
         this.velocity.set(0, 0, 0);
         this.acceleration.set(0, 0, 0);
@@ -395,14 +587,58 @@ class AIAircraft extends Aircraft {
         this.controls.yaw = 0;
         this.controls.throttle = 0.5;
         
-        // Reset target position
+        // Reset target position to be closer to the new position
         this.targetPosition.copy(this.position);
-        this.targetPosition.x += 1000 * (Math.random() - 0.5);
-        this.targetPosition.z += 1000 * (Math.random() - 0.5);
-        this.targetPosition.y += 100;
         
-        // Re-create model
+        // Set target in general direction of center
+        const targetDistance = 1000 + Math.random() * 1000;
+        const targetAngle = Math.random() * Math.PI * 2; // Random direction
+        
+        this.targetPosition.x += Math.cos(targetAngle) * targetDistance;
+        this.targetPosition.z += Math.sin(targetAngle) * targetDistance;
+        this.targetPosition.y += 200;
+        
+        // Ensure target is also within bounds
+        const safeMinX = this.terrainBounds.minX + safeMargin;
+        const safeMaxX = this.terrainBounds.maxX - safeMargin;
+        const safeMinZ = this.terrainBounds.minZ + safeMargin;
+        const safeMaxZ = this.terrainBounds.maxZ - safeMargin;
+        
+        this.targetPosition.x = Math.max(safeMinX, Math.min(this.targetPosition.x, safeMaxX));
+        this.targetPosition.z = Math.max(safeMinZ, Math.min(this.targetPosition.z, safeMaxZ));
+        
+        // Re-create model to ensure clean visual state
         this.loadModel();
+    }
+    
+    // Add static method to report bounds status
+    static reportBoundsStatus(aiAircrafts) {
+        if (!aiAircrafts || aiAircrafts.length === 0) return;
+        
+        const now = performance.now();
+        
+        // Only check the first aircraft's report time (they'll all be in sync)
+        if (now - aiAircrafts[0].lastBoundsReport < aiAircrafts[0].boundsReportInterval) {
+            return;
+        }
+        
+        // Count aircraft in and out of bounds
+        let inBoundsCount = 0;
+        let outOfBoundsCount = 0;
+        
+        for (const aircraft of aiAircrafts) {
+            if (aircraft.isOutOfBounds) {
+                outOfBoundsCount++;
+            } else {
+                inBoundsCount++;
+            }
+            
+            // Update last report time for each aircraft
+            aircraft.lastBoundsReport = now;
+        }
+        
+        // Log the status report
+        console.log(`AI Aircraft Status: ${inBoundsCount} in bounds, ${outOfBoundsCount} out of bounds (${(outOfBoundsCount / aiAircrafts.length * 100).toFixed(1)}% out of bounds)`);
     }
 }
 
