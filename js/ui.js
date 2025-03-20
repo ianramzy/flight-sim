@@ -24,4 +24,6 @@ class UI {
             this.lastFpsUpdateTime = currentTime;
         }
     }
-} 
+}
+
+export { UI }; 

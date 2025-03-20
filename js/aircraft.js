@@ -261,4 +261,6 @@ class Aircraft {
     updateControls(controls) {
         this.controls = { ...this.controls, ...controls };
     }
-} 
+}
+
+export { Aircraft }; 

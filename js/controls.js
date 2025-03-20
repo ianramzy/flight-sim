@@ -18,7 +18,7 @@ class Controls {
             this.keys[event.key.toLowerCase()] = true;
             
             // Prevent default action for control keys
-            if (['w', 'a', 's', 'd', 'q', 'e', 'shift', 'control'].includes(event.key.toLowerCase())) {
+            if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', 'q', 'e', 'shift', 'control'].includes(event.key.toLowerCase())) {
                 event.preventDefault();
             }
         });
@@ -37,29 +37,34 @@ class Controls {
             throttle: this.aircraft.controls.throttle
         };
         
-        // Handle pitch (W/S)
-        if (this.keys['w']) controls.pitch = -1;
-        if (this.keys['s']) controls.pitch = 1;
+        // Control gain factor (increased by 40%)
+        const gainFactor = 1.4;
         
-        // Handle yaw (A/D)
-        if (this.keys['a']) controls.yaw = 1;
-        if (this.keys['d']) controls.yaw = -1;
+        // Handle pitch (W/S or Up/Down arrows)
+        if (this.keys['w'] || this.keys['arrowup']) controls.pitch = -1 * gainFactor;
+        if (this.keys['s'] || this.keys['arrowdown']) controls.pitch = 1 * gainFactor;
+        
+        // Handle yaw (A/D or Left/Right arrows)
+        if (this.keys['a'] || this.keys['arrowleft']) controls.yaw = 1 * gainFactor;
+        if (this.keys['d'] || this.keys['arrowright']) controls.yaw = -1 * gainFactor;
         
         // Handle roll (Q/E)
-        if (this.keys['q']) controls.roll = -1;
-        if (this.keys['e']) controls.roll = 1;
+        if (this.keys['q']) controls.roll = -1 * gainFactor;
+        if (this.keys['e']) controls.roll = 1 * gainFactor;
         
-        // Handle throttle (Shift/Ctrl)
+        // Handle throttle (Shift/Ctrl) - 40% more responsive
         if (this.keys['shift']) {
-            controls.throttle += 0.01;
+            controls.throttle += 0.014; // Increased from 0.01
             if (controls.throttle > 1) controls.throttle = 1;
         }
         if (this.keys['control']) {
-            controls.throttle -= 0.01;
+            controls.throttle -= 0.014; // Increased from 0.01
             if (controls.throttle < 0) controls.throttle = 0;
         }
         
         // Update aircraft controls
         this.aircraft.updateControls(controls);
     }
-} 
+}
+
+export { Controls }; 

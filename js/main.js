@@ -1,3 +1,9 @@
+import { SceneManager } from './scene/SceneManager.js';
+import { Physics } from './physics.js';
+import { Aircraft } from './aircraft.js';
+import { Controls } from './controls.js';
+import { UI } from './ui.js';
+
 class FlightSimulator {
     constructor() {
         // Create the scene
@@ -5,7 +11,6 @@ class FlightSimulator {
         
         // Create physics
         this.physics = new Physics();
-        this.physics.addCloudsToScene(this.sceneManager.scene);
         
         // Create aircraft
         this.aircraft = new Aircraft(this.sceneManager.scene);
