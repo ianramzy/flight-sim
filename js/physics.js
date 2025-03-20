@@ -11,7 +11,7 @@ class Physics {
     
     createClouds() {
         // Create a cloud system with random positions
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 100; i++) {
             const x = (Math.random() - 0.5) * 5000;
             const y = 500 + Math.random() * 1000;
             const z = (Math.random() - 0.5) * 5000;
