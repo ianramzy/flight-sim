@@ -458,7 +458,7 @@ class SceneManager {
 
         const sky = new THREE.Mesh(skyGeo, skyMat);
         this.scene.add(sky);
-        console.log('Added skybox with radius:', skyboxRadius, 'and fossssssssg density:', fogDensity);
+        console.log('Added skybox with radius:', skyboxRadius, 'and fosssssssfg density:', fogDensity);
     }
 
     updateFog(groundSize) {
@@ -507,6 +507,13 @@ class SceneManager {
         // Use a higher height scale for steeper hills
         const heightScale = 250; // Increased for more dramatic hills
         
+        // Define water level threshold (points below this height will be water)
+        const waterThreshold = 0.6;
+        
+        // Track water vertices for later use
+        const waterVertices = [];
+        const waterIndices = [];
+
         // Create vertices for the terrain
         for (let z = 0; z < resolution; z++) {
             for (let x = 0; x < resolution; x++) {
@@ -526,12 +533,32 @@ class SceneManager {
                 // Add UV coordinates for texture mapping
                 uvs.push(x / (resolution - 1), z / (resolution - 1));
                 
+                // Check if this is a water vertex (below threshold)
+                const isWater = heightMap[z][x] < waterThreshold;
+                
+                // Save water vertex information for later creation of water surface
+                if (isWater) {
+                    // Store the index of this vertex
+                    waterVertices.push(x + z * resolution);
+                }
+                
                 // Add color based on height for better visual cues
                 const heightRatio = height / heightScale;
-                // Apply more subtle color variations that won't overpower the texture
-                const r = 0.95 - heightRatio * 0.05; // Very subtle variation
-                const g = 0.95 + heightRatio * 0.05; // Very subtle variation
-                const b = 0.95 - heightRatio * 0.05; // Very subtle variation
+                
+                // Apply different colors based on height
+                let r, g, b;
+                if (isWater) {
+                    // Water colors (blue instead of teal)
+                    r = 0.0;
+                    g = 0.3;
+                    b = 0.9;
+                } else {
+                    // Land colors (similar to before but slightly adjusted)
+                    r = 0.95 - heightRatio * 0.05;
+                    g = 0.95 + heightRatio * 0.05;
+                    b = 0.95 - heightRatio * 0.05;
+                }
+                
                 colors.push(r, g, b);
             }
         }
@@ -606,6 +633,9 @@ class SceneManager {
         
         // Add trees and bushes
         this.addTreesAndBushes(heightMap, resolution, groundSize);
+        
+        // Add water surface
+        this.createWaterSurface(heightMap, resolution, groundSize, waterThreshold, heightScale);
     }
     
     generateRollingHillsHeightMap(size) {
@@ -698,6 +728,90 @@ class SceneManager {
         return processedMap;
     }
     
+    createWaterSurface(heightMap, resolution, groundSize, waterThreshold, heightScale) {
+        // Create water surface geometry
+        const waterGeometry = new THREE.BufferGeometry();
+        const positions = [];
+        const colors = [];
+        const indices = [];
+        const waterHeight = waterThreshold * heightScale; // Set water level at the threshold
+        
+        // Create vertices for the water surface
+        for (let z = 0; z < resolution; z++) {
+            for (let x = 0; x < resolution; x++) {
+                // Calculate position
+                const xPos = (x / (resolution - 1) - 0.5) * groundSize;
+                const zPos = (z / (resolution - 1) - 0.5) * groundSize;
+                
+                // Get terrain height from the heightmap
+                let terrainHeight = 0;
+                if (x < heightMap.length && z < heightMap.length) {
+                    terrainHeight = heightMap[z][x] * heightScale;
+                }
+                
+                // Add position (use water height if below threshold)
+                if (heightMap[z][x] < waterThreshold) {
+                    positions.push(xPos, waterHeight, zPos);
+                    
+                    // Blue color for water (changed from teal)
+                    colors.push(0.0, 0.3, 0.9);
+                } else {
+                    // For non-water areas, place vertices below terrain (will not be visible)
+                    positions.push(xPos, -1000, zPos);
+                    
+                    // Use same color for consistency
+                    colors.push(0.0, 0.3, 0.9);
+                }
+            }
+        }
+        
+        // Create indices for water faces (only where heightmap value is below threshold)
+        for (let z = 0; z < resolution - 1; z++) {
+            for (let x = 0; x < resolution - 1; x++) {
+                const a = x + z * resolution;
+                const b = (x + 1) + z * resolution;
+                const c = x + (z + 1) * resolution;
+                const d = (x + 1) + (z + 1) * resolution;
+                
+                // Check if any of the vertices is below water threshold
+                if (
+                    heightMap[z][x] < waterThreshold || 
+                    heightMap[z][x+1] < waterThreshold || 
+                    heightMap[z+1][x] < waterThreshold || 
+                    heightMap[z+1][x+1] < waterThreshold
+                ) {
+                    // Two triangles per grid square
+                    indices.push(a, c, b);
+                    indices.push(c, d, b);
+                }
+            }
+        }
+        
+        // Set the attributes
+        waterGeometry.setIndex(indices);
+        waterGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        waterGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        waterGeometry.computeVertexNormals();
+        
+        // Create water material with blue color
+        const waterMaterial = new THREE.MeshStandardMaterial({
+            color: 0x0044FF, // Blue color (changed from teal)
+            roughness: 0.1,
+            metalness: 0.2,
+            transparent: true,
+            opacity: 0.8,
+            flatShading: false,
+            vertexColors: true
+        });
+        
+        // Create and position the water mesh
+        const water = new THREE.Mesh(waterGeometry, waterMaterial);
+        water.receiveShadow = true;
+        water.name = 'water';
+        
+        this.scene.add(water);
+    }
+    
     createTerrainMaterial() {
         // Create a more detailed ground material with brighter color and custom fog handling
         const terrainMaterial = new THREE.MeshStandardMaterial({
@@ -781,7 +895,14 @@ class SceneManager {
         const minValidHeight = 0.45; // Only place on medium to high ground
         const avgHeight = validHeights.reduce((sum, h) => sum + h, 0) / validHeights.length;
         
-        console.log(`Height map statistics - min valid: ${minValidHeight}, avg: ${avgHeight}`);
+        // Get water threshold used in createTerrain
+        const waterThreshold = 0.5; // Match the water threshold from createTerrain
+        
+        // Add a margin above the water threshold to prevent trees at water edges
+        const waterMargin = 0.05; // Margin above water level to prevent trees at edges
+        const safeTreeHeight = waterThreshold + waterMargin;
+        
+        console.log(`Height map statistics - min valid: ${minValidHeight}, avg: ${avgHeight}, water threshold: ${waterThreshold}, safe tree height: ${safeTreeHeight}`);
         
         // Process trees in batches
         for (let batch = 0; batch < totalBatches; batch++) {
@@ -809,8 +930,28 @@ class SceneManager {
                     
                     const heightValue = heightMap[heightMapZ][heightMapX];
                     
-                    // Only place on medium to high ground
-                    if (heightValue >= minValidHeight) {
+                    // Check if this point is near water by examining surrounding cells
+                    let isNearWater = false;
+                    
+                    // Check a small surrounding area to detect water proximity
+                    const checkRadius = 2; // Check 2 cells in each direction
+                    for (let dz = -checkRadius; dz <= checkRadius && !isNearWater; dz++) {
+                        for (let dx = -checkRadius; dx <= checkRadius && !isNearWater; dx++) {
+                            const checkX = heightMapX + dx;
+                            const checkZ = heightMapZ + dz;
+                            
+                            // Check if the neighbor cell is within bounds
+                            if (checkX >= 0 && checkX < resolution && checkZ >= 0 && checkZ < resolution) {
+                                if (heightMap[checkZ][checkX] < waterThreshold) {
+                                    isNearWater = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Only place on medium to high ground AND not in or near water
+                    if (heightValue >= minValidHeight && heightValue >= safeTreeHeight && !isNearWater) {
                         const y = heightValue * this.terrainHeightScale;
                         batchPositions.push({ x, y, z });
                         
