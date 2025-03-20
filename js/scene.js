@@ -197,9 +197,6 @@ class SceneManager {
         
         // Update fog to match lighting mode
         this.updateFog();
-        
-        // Update lake colors
-        this.updateLakeColors();
     }
     
     clearLights() {
@@ -221,24 +218,6 @@ class SceneManager {
             }
             if (light.shadow && light.shadow.map) {
                 light.shadow.map.dispose();
-            }
-        });
-    }
-    
-    updateLakeColors() {
-        // Find all lake meshes and update their colors
-        this.scene.children.forEach(child => {
-            if (child.isMesh && child.material && 
-                (child.material.opacity === 0.85 || child.material.opacity === 0.8) && 
-                child.material.transparent) {
-                
-                // Create a fresh color to avoid accumulation
-                const color = this.lightingMode === 'sunset' ? 0xFF9966 : 0x4287f5;
-                
-                // Reset and update material properties
-                child.material.color.set(color);
-                child.material.metalness = this.lightingMode === 'sunset' ? 0.4 : 0.2;
-                child.material.needsUpdate = true;
             }
         });
     }
@@ -357,6 +336,7 @@ class SceneManager {
         const vertexShader = `
             varying vec3 vWorldPosition;
             varying float vDistance;
+            varying vec3 vViewVector;
             void main() {
                 vec4 worldPosition = modelMatrix * vec4(position, 1.0);
                 vWorldPosition = worldPosition.xyz;
@@ -364,6 +344,9 @@ class SceneManager {
                 // Calculate distance from camera for fog
                 vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                 vDistance = -mvPosition.z;
+                
+                // Save view vector for directional fog
+                vViewVector = normalize(worldPosition.xyz - cameraPosition);
                 
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
@@ -383,6 +366,7 @@ class SceneManager {
                 uniform float exponent;
                 varying vec3 vWorldPosition;
                 varying float vDistance;
+                varying vec3 vViewVector;
                 void main() {
                     float h = normalize(vWorldPosition + offset).y;
                     vec3 skyColor;
@@ -393,8 +377,17 @@ class SceneManager {
                         skyColor = mix(bottomColor, middleColor, max(pow(h / 0.15, exponent), 0.0));
                     }
                     
-                    // Apply fog
-                    float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vDistance * vDistance);
+                    // Apply fog only for horizontal viewing angles
+                    // Calculate how much we're looking "up" (y component of view vector)
+                    float upFactor = max(0.0, vViewVector.y);
+                    
+                    // Reduce fog effect as we look more upward
+                    // 1.0 when looking horizontally, 0.0 when looking straight up
+                    // Using a higher power creates a sharper transition between foggy and clear
+                    float horizontalFactor = 1.0 - pow(upFactor, 0.2);
+                    
+                    // Apply standard fog calculation but weight by horizontal factor
+                    float fogFactor = (1.0 - exp(-fogDensity * fogDensity * vDistance * vDistance)) * horizontalFactor;
                     skyColor = mix(skyColor, fogColor, fogFactor);
                     
                     gl_FragColor = vec4(skyColor, 1.0);
@@ -421,12 +414,22 @@ class SceneManager {
                 uniform float exponent;
                 varying vec3 vWorldPosition;
                 varying float vDistance;
+                varying vec3 vViewVector;
                 void main() {
                     float h = normalize(vWorldPosition + offset).y;
                     vec3 skyColor = mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0));
                     
-                    // Apply fog
-                    float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vDistance * vDistance);
+                    // Apply fog only for horizontal viewing angles
+                    // Calculate how much we're looking "up" (y component of view vector)
+                    float upFactor = max(0.0, vViewVector.y);
+                    
+                    // Reduce fog effect as we look more upward
+                    // 1.0 when looking horizontally, 0.0 when looking straight up
+                    // Using a higher power creates a sharper transition between foggy and clear
+                    float horizontalFactor = 1.0 - pow(upFactor, 0.2);
+                    
+                    // Apply standard fog calculation but weight by horizontal factor
+                    float fogFactor = (1.0 - exp(-fogDensity * fogDensity * vDistance * vDistance)) * horizontalFactor;
                     skyColor = mix(skyColor, fogColor, fogFactor);
                     
                     gl_FragColor = vec4(skyColor, 1.0);
@@ -450,12 +453,12 @@ class SceneManager {
             vertexShader: vertexShader,
             fragmentShader: fragmentShader,
             side: THREE.BackSide,
-            fog: true // Enable fog for the skybox
+            fog: false // Disable automatic fog for the skybox as we're handling it in the shader
         });
 
         const sky = new THREE.Mesh(skyGeo, skyMat);
         this.scene.add(sky);
-        console.log('Added skybox with radius:', skyboxRadius, 'and fog density:', fogDensity);
+        console.log('Added skybox with radius:', skyboxRadius, 'and fossssssssg density:', fogDensity);
     }
 
     updateFog(groundSize) {
@@ -464,13 +467,13 @@ class SceneManager {
         
         console.log('Updating fog with density:', fogDensity, 'factor:', this.fogDensityFactor);
         
-        // Create fog that matches the skybox colors
+        // Create fog that matches the skybox colors but only affects horizontal visibility
         if (this.lightingMode === 'sunset') {
             // Sunset fog - warm orange/pink tint
-            this.scene.fog = new THREE.FogExp2(0xFF8844, fogDensity);
+            this.scene.fog = new THREE.FogExp2(0xFF8844, fogDensity * 0.5); // Reduced density for less vertical fog
         } else {
             // Daytime fog - light blue/white tint
-            this.scene.fog = new THREE.FogExp2(0xCCDDFF, fogDensity);
+            this.scene.fog = new THREE.FogExp2(0xCCDDFF, fogDensity * 0.5); // Reduced density for less vertical fog
         }
         
         // Update skybox with new fog settings
@@ -555,36 +558,26 @@ class SceneManager {
         terrainGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
         terrainGeometry.computeVertexNormals();
         
-        // Track lake positions
-        this.lakePositions = [];
-        
-        // Identify potential lake areas (low spots)
-        for (let z = 0; z < heightMapSize; z++) {
-            for (let x = 0; x < heightMapSize; x++) {
-                const lakeLevelThreshold = 0.75; // Increased from 0.25 to allow lakes at higher elevations
-                if (heightMap[z][x] < lakeLevelThreshold) {
-                    // Convert to world coordinates
-                    const worldX = (x / resolution - 0.5) * groundSize;
-                    const worldZ = (z / resolution - 0.5) * groundSize;
-                    const worldY = heightMap[z][x] * heightScale;
-                    
-                    this.lakePositions.push({
-                        x: worldX,
-                        y: worldY,
-                        z: worldZ,
-                        radius: 30 + Math.random() * 120
-                    });
-                }
-            }
-        }
-        
         // Create terrain material with vertex colors for better visual cues
         const terrainMaterial = new THREE.MeshStandardMaterial({
             vertexColors: true,  // Use vertex colors
             roughness: 0.9,      // Increased roughness for grass
             metalness: 0.0,      // No metalness for natural look
             flatShading: false,  // Smooth shading for more natural look
-            map: null            // Will set this later
+            map: null,           // Will set this later
+            onBeforeCompile: (shader) => {
+                // Add custom fog handling to the shader
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <fog_fragment>',
+                    `
+                    #include <fog_fragment>
+                    // Custom fog handling that reduces fog at higher altitudes
+                    // Use a sharper transition to keep fog very low to the ground
+                    float heightFactor = 1.0 - smoothstep(0.0, 5.0, vViewPosition.y);
+                    gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor * heightFactor);
+                    `
+                );
+            }
         });
         
         // Add grass texture to the terrain - using a different URL for better visibility
@@ -611,8 +604,7 @@ class SceneManager {
         // Save the height scale for other methods to use
         this.terrainHeightScale = heightScale;
         
-        // Add lakes, trees and bushes
-        this.addLakes();
+        // Add trees and bushes
         this.addTreesAndBushes(heightMap, resolution, groundSize);
     }
     
@@ -707,81 +699,42 @@ class SceneManager {
     }
     
     createTerrainMaterial() {
-        // Create a more detailed ground material with brighter color
+        // Create a more detailed ground material with brighter color and custom fog handling
         const terrainMaterial = new THREE.MeshStandardMaterial({
             color: 0x9CCC65, // Brighter green color
             roughness: 0.7,
             metalness: 0.1,
-            flatShading: false
+            flatShading: false,
+            onBeforeCompile: (shader) => {
+                // Add custom fog handling to the shader
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    '#include <fog_fragment>',
+                    `
+                    #include <fog_fragment>
+                    // Custom fog handling that reduces fog at higher altitudes
+                    // Use a sharper transition to keep fog very low to the ground
+                    float heightFactor = 1.0 - smoothstep(0.0, 5.0, vViewPosition.y);
+                    gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor * heightFactor);
+                    `
+                );
+            }
         });
         
         return terrainMaterial;
     }
     
-    addLakes() {
-        // Process and filter lake positions to avoid overlapping
-        const filteredLakes = [];
-        
-        // Sort lakes by size (largest first)
-        this.lakePositions.sort((a, b) => b.radius - a.radius);
-        
-        // Filter to avoid overlapping lakes (keep only the largest in an area)
-        for (let i = 0; i < this.lakePositions.length; i++) {
-            let overlap = false;
-            
-            // Only process some of the potential lake positions to avoid having too many
-            // Increased probability from 0.2 to 0.5 to create more lakes
-            if (filteredLakes.length > 30 || Math.random() > 0.5) continue;
-            
-            // Check if this lake overlaps with any existing filtered lake
-            for (let j = 0; j < filteredLakes.length; j++) {
-                const dx = this.lakePositions[i].x - filteredLakes[j].x;
-                const dz = this.lakePositions[i].z - filteredLakes[j].z;
-                const distance = Math.sqrt(dx * dx + dz * dz);
-                
-                if (distance < this.lakePositions[i].radius + filteredLakes[j].radius + 50) {
-                    overlap = true;
-                    break;
-                }
-            }
-            
-            if (!overlap) {
-                filteredLakes.push(this.lakePositions[i]);
-            }
-        }
-        
-        // Create lakes
-        for (const lake of filteredLakes) {
-            // Lake surface (water) - blue color for daytime, will be updated if in sunset mode
-            const lakeGeometry = new THREE.CircleGeometry(lake.radius, 32);
-            const lakeMaterial = new THREE.MeshStandardMaterial({
-                color: this.lightingMode === 'sunset' ? 0xFF9966 : 0x4287f5, // Blue for daytime, orange for sunset
-                roughness: 0.0,
-                metalness: this.lightingMode === 'sunset' ? 0.4 : 0.2,
-                transparent: true,
-                opacity: 0.85
-            });
-            
-            const lakeMesh = new THREE.Mesh(lakeGeometry, lakeMaterial);
-            lakeMesh.rotation.x = -Math.PI / 2; // Rotate to be horizontal
-            lakeMesh.position.set(lake.x, lake.y, lake.z); // Position exactly at terrain height, not above it
-            lakeMesh.receiveShadow = true;
-            
-            this.scene.add(lakeMesh);
-        }
-    }
-    
     addTreesAndBushes(heightMap, resolution, groundSize) {
         console.log('Adding trees and bushes using instanced meshes for better performance');
-        // Increase vegetation density to match 4x larger map area
-        const treeCount = 5000 * 5 * 4; // Quadrupled for 4x map area
-        const bushCount = 8000 * 10 * 4; // Quadrupled for 4x map area
+        // Target 150,000 trees as requested
+        const treeCount = 150000;
+        
+        console.log(`Attempting to place ${treeCount} trees on terrain...`);
         
         // Use instanced meshes for better performance
         // Create template geometries
-        const trunkGeometry = new THREE.CylinderGeometry(2, 3, 20, 8);
-        const leavesGeometry = new THREE.ConeGeometry(12, 30, 8);
-        const bushGeometry = new THREE.SphereGeometry(3, 8, 8);
+        // Make trees 50% wider
+        const trunkGeometry = new THREE.CylinderGeometry(3, 4.5, 20, 8); // 50% wider trunk
+        const leavesGeometry = new THREE.ConeGeometry(18, 30, 8); // 50% wider cone
         
         // Create materials
         const trunkMaterial = new THREE.MeshStandardMaterial({ 
@@ -796,71 +749,107 @@ class SceneManager {
             metalness: 0.0
         });
         
-        const bushMaterial = new THREE.MeshStandardMaterial({
-            color: 0x4CAF50,
-            roughness: 0.8,
-            metalness: 0.1,
-            vertexColors: true
-        });
+        console.log('Creating instanced meshes for 150,000 trees...');
         
-        // Create instanced meshes
+        // Use lower level Three.js APIs for more efficient memory usage
         const trunkMesh = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, treeCount);
         const leavesMesh = new THREE.InstancedMesh(leavesGeometry, leavesMaterial, treeCount);
-        // const bushMesh = new THREE.InstancedMesh(bushGeometry, bushMaterial, bushCount); // Commenting out bush mesh
         
-        // Set up for instanced rendering
-        const dummyObject = new THREE.Object3D();
-        
-        // Track tree heights for debugging
-        const treeHeights = [];
+        // Process trees in batches to avoid call stack issues
+        const batchSize = 5000; // Process this many trees at a time
+        const totalBatches = Math.ceil(treeCount / batchSize);
         let treeInstanceCount = 0;
         
-        // Add trees on higher ground
-        for (let i = 0; i < treeCount; i++) {
-            // Random position
-            const x = (Math.random() - 0.5) * groundSize * 0.8;
-            const z = (Math.random() - 0.5) * groundSize * 0.8;
+        // Temporary matrix and object for setting positions
+        const dummyObject = new THREE.Object3D();
+        const matrix = new THREE.Matrix4();
+        
+        console.log(`Processing trees in ${totalBatches} batches of ${batchSize}...`);
+        
+        // Track valid height ranges for rapid validation
+        const validHeights = [];
+        // Sample the height map first to understand valid height ranges
+        for (let i = 0; i < 1000; i++) {
+            const sampleX = Math.floor(Math.random() * resolution);
+            const sampleZ = Math.floor(Math.random() * resolution);
+            if (heightMap[sampleZ] && heightMap[sampleZ][sampleX]) {
+                validHeights.push(heightMap[sampleZ][sampleX]);
+            }
+        }
+        
+        // Calculate height statistics for faster validation
+        const minValidHeight = 0.45; // Only place on medium to high ground
+        const avgHeight = validHeights.reduce((sum, h) => sum + h, 0) / validHeights.length;
+        
+        console.log(`Height map statistics - min valid: ${minValidHeight}, avg: ${avgHeight}`);
+        
+        // Process trees in batches
+        for (let batch = 0; batch < totalBatches; batch++) {
+            console.log(`Processing batch ${batch + 1}/${totalBatches}...`);
             
-            // Convert to height map coordinates
-            const heightMapX = Math.floor((x / groundSize + 0.5) * resolution);
-            const heightMapZ = Math.floor((z / groundSize + 0.5) * resolution);
+            // Generate positions for this batch
+            const batchPositions = [];
+            let attempts = 0;
+            const maxAttemptsPerBatch = batchSize * 3; // Allow 3 attempts per desired tree
             
-            // Check height and only place trees on medium-high ground
-            let y = 0;
-            if (heightMapX >= 0 && heightMapX < resolution && heightMapZ >= 0 && heightMapZ < resolution) {
-                // Use the same height scale as defined in createTerrain
-                y = heightMap[heightMapZ][heightMapX] * this.terrainHeightScale;
+            while (batchPositions.length < batchSize && attempts < maxAttemptsPerBatch) {
+                attempts++;
                 
-                // Only place trees on medium to high ground (not on lakes)
-                if (heightMap[heightMapZ][heightMapX] < 0.45) { // Only avoid lakes, allow trees in canyons
-                    continue;
+                // Random position - distribute across the entire map
+                const x = (Math.random() - 0.5) * groundSize * 0.95;
+                const z = (Math.random() - 0.5) * groundSize * 0.95;
+                
+                // Convert to height map coordinates
+                const heightMapX = Math.floor((x / groundSize + 0.5) * resolution);
+                const heightMapZ = Math.floor((z / groundSize + 0.5) * resolution);
+                
+                // Fast validation check
+                if (heightMapX >= 0 && heightMapX < resolution && 
+                    heightMapZ >= 0 && heightMapZ < resolution) {
+                    
+                    const heightValue = heightMap[heightMapZ][heightMapX];
+                    
+                    // Only place on medium to high ground
+                    if (heightValue >= minValidHeight) {
+                        const y = heightValue * this.terrainHeightScale;
+                        batchPositions.push({ x, y, z });
+                        
+                        // Break early if we have enough positions for this batch
+                        if (batchPositions.length >= batchSize) break;
+                    }
                 }
-            } else {
-                continue;
             }
             
-            // Store tree heights for debugging
-            treeHeights.push(y);
+            // Place trees for this batch
+            for (let i = 0; i < batchPositions.length && treeInstanceCount < treeCount; i++) {
+                const pos = batchPositions[i];
+                
+                // Add some size variation to each tree
+                const treeScale = 0.8 + Math.random() * 0.4; // 80% to 120% of original size
+                
+                // Set trunk position and rotation
+                dummyObject.position.set(pos.x, pos.y + 10, pos.z);
+                dummyObject.rotation.y = Math.random() * Math.PI * 2;
+                dummyObject.scale.set(treeScale, treeScale, treeScale);
+                dummyObject.updateMatrix();
+                
+                // Apply to instanced mesh
+                trunkMesh.setMatrixAt(treeInstanceCount, dummyObject.matrix);
+                
+                // Set leaves position
+                dummyObject.position.set(pos.x, pos.y + 30, pos.z);
+                dummyObject.updateMatrix();
+                
+                // Apply to instanced mesh
+                leavesMesh.setMatrixAt(treeInstanceCount, dummyObject.matrix);
+                
+                treeInstanceCount++;
+            }
             
-            // Set trunk position and rotation
-            dummyObject.position.set(x, y + 10, z); // Position trunk with Y offset for proper placement
-            dummyObject.rotation.y = Math.random() * Math.PI * 2;
-            dummyObject.updateMatrix();
+            // Force garbage collection between batches
+            batchPositions.length = 0;
             
-            // Apply to instanced mesh
-            trunkMesh.setMatrixAt(treeInstanceCount, dummyObject.matrix);
-            
-            // Set leaves position
-            dummyObject.position.set(x, y + 32, z); // Position leaves above trunk
-            dummyObject.updateMatrix();
-            
-            // Apply to instanced mesh
-            leavesMesh.setMatrixAt(treeInstanceCount, dummyObject.matrix);
-            
-            treeInstanceCount++;
-            
-            // Break early if we've reached the limit
-            if (treeInstanceCount >= treeCount) break;
+            console.log(`Batch ${batch + 1} complete. ${treeInstanceCount} trees placed so far.`);
         }
         
         // Update instance counts
@@ -877,89 +866,7 @@ class SceneManager {
         this.scene.add(trunkMesh);
         this.scene.add(leavesMesh);
         
-        // Log tree placement stats
-        if (treeHeights.length > 0) {
-            console.log('Tree heights - min:', Math.min(...treeHeights), 'max:', Math.max(...treeHeights), 'avg:', treeHeights.reduce((a, b) => a + b, 0) / treeHeights.length);
-            console.log('Trees placed: ' + treeInstanceCount);
-        } else {
-            console.log('No trees were placed');
-        }
-        
-        // Track bush heights for debugging
-        const bushHeights = [];
-        let bushInstanceCount = 0;
-        
-        // Add bushes (mostly on lower ground)
-        /* Commenting out bushes for now
-        for (let i = 0; i < bushCount; i++) {
-            // Random position
-            const x = (Math.random() - 0.5) * groundSize * 0.9;
-            const z = (Math.random() - 0.5) * groundSize * 0.9;
-            
-            // Convert to height map coordinates
-            const heightMapX = Math.floor((x / groundSize + 0.5) * resolution);
-            const heightMapZ = Math.floor((z / groundSize + 0.5) * resolution);
-            
-            // Check height and avoid placing bushes in lakes
-            let y = 0;
-            if (heightMapX >= 0 && heightMapX < resolution && heightMapZ >= 0 && heightMapZ < resolution) {
-                // Use the same height scale as defined in createTerrain
-                y = heightMap[heightMapZ][heightMapX] * this.terrainHeightScale;
-                
-                // Avoid placing bushes in lake areas
-                if (heightMap[heightMapZ][heightMapX] < 0.75) { // Updated to match lake threshold of 0.75
-                    continue;
-                }
-            } else {
-                continue;
-            }
-            
-            // Store bush heights for debugging
-            bushHeights.push(y);
-            
-            // Random scale for variety
-            const scale = 0.5 + Math.random() * 0.5;
-            
-            // Set bush position, scale, and rotation
-            dummyObject.position.set(x, y + 3, z); // Position with Y offset for proper placement
-            dummyObject.scale.set(scale, scale * 0.8, scale); // Make slightly flatter
-            dummyObject.rotation.y = Math.random() * Math.PI * 2;
-            dummyObject.updateMatrix();
-            
-            // Apply to instanced mesh
-            bushMesh.setMatrixAt(bushInstanceCount, dummyObject.matrix);
-            
-            // Set color
-            bushMesh.setColorAt(bushInstanceCount, new THREE.Color(
-                0.2 + Math.random() * 0.1,
-                0.5 + Math.random() * 0.2,
-                0.2
-            ));
-            
-            bushInstanceCount++;
-            
-            // Break early if we've reached the limit
-            if (bushInstanceCount >= bushCount) break;
-        }
-        
-        // Update instance count
-        bushMesh.count = bushInstanceCount;
-        
-        // Enable shadows
-        bushMesh.castShadow = true;
-        bushMesh.receiveShadow = true;
-        
-        // Add to scene
-        this.scene.add(bushMesh);
-        
-        // Log bush height stats
-        if (bushHeights.length > 0) {
-            console.log('Bush heights - min:', Math.min(...bushHeights), 'max:', Math.max(...bushHeights), 'avg:', bushHeights.reduce((a, b) => a + b, 0) / bushHeights.length);
-            console.log('Bushes placed: ' + bushInstanceCount);
-        } else {
-            console.log('No bushes were placed');
-        }
-        */
+        console.log(`Successfully placed ${treeInstanceCount} out of ${treeCount} trees (50% wider)`);
     }
 
     addMountains() {
