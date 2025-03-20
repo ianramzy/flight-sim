@@ -27,10 +27,16 @@ class SceneManager {
         // Default fog density factor
         this.fogDensityFactor = 2.5;
         
+        // Atmospheric mist settings
+        this.mistEnabled = true;
+        this.mistIntensity = 1.5;
+        this.mistClock = new THREE.Clock();
+        
         this.setupLights();
         this.createSkybox();
         this.createTerrain();
         this.addMountains();
+        this.createAtmosphericMist(); // Add valley mist
         
         // Handle window resize
         window.addEventListener('resize', () => this.onWindowResize(), false);
@@ -40,6 +46,9 @@ class SceneManager {
         
         // Add UI control for fog
         this.createFogControls();
+        
+        // Add UI control for mist
+        this.createMistControls();
     }
 
     createLightingToggle() {
@@ -179,6 +188,71 @@ class SceneManager {
         document.body.appendChild(fogControlContainer);
     }
     
+    createMistControls() {
+        // Create container for mist controls
+        const mistControlContainer = document.createElement('div');
+        mistControlContainer.style.position = 'fixed';
+        mistControlContainer.style.bottom = '20px';
+        mistControlContainer.style.right = '200px'; // Position next to fog controls
+        mistControlContainer.style.padding = '10px';
+        mistControlContainer.style.background = 'rgba(0, 0, 0, 0.5)';
+        mistControlContainer.style.color = 'white';
+        mistControlContainer.style.border = '1px solid white';
+        mistControlContainer.style.zIndex = '1000';
+        mistControlContainer.style.display = 'flex';
+        mistControlContainer.style.flexDirection = 'column';
+        mistControlContainer.style.alignItems = 'center';
+        mistControlContainer.style.gap = '5px';
+        
+        // Add label
+        const mistLabel = document.createElement('div');
+        mistLabel.textContent = 'Valley Mist';
+        mistControlContainer.appendChild(mistLabel);
+        
+        // Create slider for mist intensity
+        const mistSlider = document.createElement('input');
+        mistSlider.type = 'range';
+        mistSlider.min = '0';
+        mistSlider.max = '2';
+        mistSlider.step = '0.1';
+        mistSlider.value = this.mistIntensity;
+        mistSlider.style.width = '150px';
+        
+        // Value display
+        const mistValueDisplay = document.createElement('div');
+        mistValueDisplay.textContent = `Intensity: ${this.mistIntensity.toFixed(1)}`;
+        
+        // Add event listener
+        mistSlider.addEventListener('input', (event) => {
+            this.mistIntensity = parseFloat(event.target.value);
+            mistValueDisplay.textContent = `Intensity: ${this.mistIntensity.toFixed(1)}`;
+            this.updateMistIntensity();
+        });
+        
+        // Toggle button for enabling/disabling mist
+        const toggleMistButton = document.createElement('button');
+        toggleMistButton.textContent = this.mistEnabled ? 'Disable Mist' : 'Enable Mist';
+        toggleMistButton.style.padding = '5px';
+        toggleMistButton.style.cursor = 'pointer';
+        toggleMistButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        toggleMistButton.style.color = 'white';
+        toggleMistButton.style.border = '1px solid white';
+        
+        toggleMistButton.addEventListener('click', () => {
+            this.mistEnabled = !this.mistEnabled;
+            toggleMistButton.textContent = this.mistEnabled ? 'Disable Mist' : 'Enable Mist';
+            this.toggleMist();
+        });
+        
+        // Add elements to container
+        mistControlContainer.appendChild(mistSlider);
+        mistControlContainer.appendChild(mistValueDisplay);
+        mistControlContainer.appendChild(toggleMistButton);
+        
+        // Add to document
+        document.body.appendChild(mistControlContainer);
+    }
+    
     toggleLightingMode() {
         console.log('Toggling lighting mode from', this.lightingMode, 'to', 
             this.lightingMode === 'sunset' ? 'daytime' : 'sunset');
@@ -197,6 +271,9 @@ class SceneManager {
         
         // Update fog to match lighting mode
         this.updateFog();
+        
+        // Update mist colors based on lighting mode
+        this.updateMistColors();
     }
     
     clearLights() {
@@ -1021,8 +1098,8 @@ class SceneManager {
             let z = (Math.random() * 2 - 1) * groundSize * 0.45; // Random position across map
             
             // Create jagged mountain
-            const mountainBaseRadius = 150 + Math.random() * 350;
-            const mountainHeight = 400 + Math.random() * 800;
+            const mountainBaseRadius = 150 + Math.random() * 550;
+            const mountainHeight = 300 + Math.random() * 1000;
             
             // Add some clustering for more natural mountain ranges
             const clusterChance = 0.4; // 40% chance of being in a cluster
@@ -1421,6 +1498,10 @@ class SceneManager {
     render(camera) {
         if (!camera) return;
         
+        // Update mist animation
+        const deltaTime = this.mistClock.getDelta();
+        this.updateMist(deltaTime);
+        
         // When in performance test mode, disable vsync
         if (this.isUncapped) {
             // These settings help break through the vsync/requestAnimationFrame limit
@@ -1507,5 +1588,389 @@ class SceneManager {
         
         // Use setTimeout with 0ms delay to bypass vsync
         setTimeout(() => this.uncapFrames(), 0);
+    }
+
+    toggleMist() {
+        if (this.mistParticleSystem) {
+            this.mistParticleSystem.visible = this.mistEnabled;
+        }
+    }
+    
+    updateMistIntensity() {
+        if (this.mistParticleSystem && this.mistParticleMaterial) {
+            // Update opacity based on intensity
+            this.mistParticleMaterial.opacity = 0.3 * this.mistIntensity;
+            
+            // Update scale of particles based on intensity
+            const particles = this.mistParticleSystem.geometry.attributes.position;
+            const count = particles.count;
+            const sizes = this.mistParticleSystem.geometry.attributes.size;
+            
+            for (let i = 0; i < count; i++) {
+                // Scale original size by intensity
+                sizes.array[i] = this.mistParticleSizes[i] * this.mistIntensity;
+            }
+            
+            sizes.needsUpdate = true;
+        }
+    }
+    
+    updateMistColors() {
+        if (this.mistParticleSystem) {
+            const colors = this.mistParticleSystem.geometry.attributes.color;
+            const count = colors.count;
+            
+            for (let i = 0; i < count; i++) {
+                const idx = i * 3;
+                if (this.lightingMode === 'sunset') {
+                    // Sunset mist has warmer orange/pink tints
+                    colors.array[idx] = 0.98 + Math.random() * 0.02; // Red 
+                    colors.array[idx + 1] = 0.92 + Math.random() * 0.05; // Green
+                    colors.array[idx + 2] = 0.85 + Math.random() * 0.05; // Blue
+                } else {
+                    // Daytime mist is white/light blue
+                    colors.array[idx] = 0.95 + Math.random() * 0.05;
+                    colors.array[idx + 1] = 0.95 + Math.random() * 0.05;
+                    colors.array[idx + 2] = 1.0;
+                }
+            }
+            
+            colors.needsUpdate = true;
+        }
+    }
+
+    createAtmosphericMist() {
+        console.log('Creating optimized Bob Ross style mist across the map');
+        
+        // Define mist parameters - reduced for performance
+        const groundSize = 20000;
+        const mistCount = 50000; // Reduced from 200,000 for better performance
+        const mistHeight = 300;
+        
+        // Store original sizes for intensity updates
+        this.mistParticleSizes = new Float32Array(mistCount);
+        
+        // Create particle system for mist
+        const mistGeometry = new THREE.BufferGeometry();
+        const mistPositions = new Float32Array(mistCount * 3);
+        const mistSizes = new Float32Array(mistCount);
+        const mistColors = new Float32Array(mistCount * 3);
+        const mistOpacities = new Float32Array(mistCount);
+        
+        // Get terrain for height sampling
+        const terrain = this.scene.getObjectByName('terrain');
+        const terrainPositions = terrain ? terrain.geometry.attributes.position : null;
+        const terrainIndices = terrain ? terrain.geometry.index : null;
+        
+        // Create a map to quickly look up heights - moved outside the if block
+        const heightMap = new Map();
+        
+        // Sample terrain to find low areas suitable for mist
+        const mistPlacementPoints = [];
+        if (terrainPositions && terrainIndices) {
+            const resolution = Math.sqrt(terrainPositions.count);
+            
+            // Store heights at each position - use sparse sampling for performance
+            for (let i = 0; i < terrainPositions.count; i += 5) { // Sample only every 5th point
+                const x = terrainPositions.getX(i);
+                const y = terrainPositions.getY(i);
+                const z = terrainPositions.getZ(i);
+                
+                // Use x,z as key
+                const key = `${Math.round(x)},${Math.round(z)}`;
+                heightMap.set(key, y);
+            }
+            
+            // Find valleys first (low points) - reduced sampling
+            const samplingInterval = 30; // Increased from 12 for performance
+            for (let i = 0; i < terrainPositions.count; i += samplingInterval) {
+                const x = terrainPositions.getX(i);
+                const y = terrainPositions.getY(i);
+                const z = terrainPositions.getZ(i);
+                
+                // Skip points above certain height (only want mist in low areas)
+                if (y > mistHeight * 0.8) continue;
+                
+                // Check surrounding points using fewer checks for performance
+                let isValley = true;
+                const checkRadius = 500;
+                const checkPoints = 4; // Reduced from 8
+                
+                for (let j = 0; j < checkPoints; j++) {
+                    const angle = (j / checkPoints) * Math.PI * 2;
+                    const checkX = Math.round(x + Math.cos(angle) * checkRadius);
+                    const checkZ = Math.round(z + Math.sin(angle) * checkRadius);
+                    const key = `${checkX},${checkZ}`;
+                    
+                    if (heightMap.has(key) && heightMap.get(key) < y) {
+                        isValley = false;
+                        break;
+                    }
+                }
+                
+                if (isValley) {
+                    mistPlacementPoints.push({ 
+                        x, y, z, 
+                        type: 'valley', 
+                        priority: 1.0
+                    });
+                }
+            }
+            
+            // Add low areas - reduced sampling
+            for (let i = 0; i < terrainPositions.count; i += samplingInterval * 4) {
+                const x = terrainPositions.getX(i);
+                const y = terrainPositions.getY(i);
+                const z = terrainPositions.getZ(i);
+                
+                if (y < mistHeight * 1.5 && 
+                    !mistPlacementPoints.some(p => 
+                        Math.abs(p.x - x) < 600 && Math.abs(p.z - z) < 600)) {
+                    
+                    mistPlacementPoints.push({ 
+                        x, y, z, 
+                        type: 'lowPoint', 
+                        priority: 0.7
+                    });
+                }
+            }
+        }
+        
+        // Add grid for complete coverage - use coarser grid for performance
+        const gridSize = 16; // Reduced from 32
+        const gridSpacing = groundSize / gridSize;
+        const gridOffset = -groundSize / 2 + gridSpacing / 2;
+        
+        for (let x = 0; x < gridSize; x++) {
+            for (let z = 0; z < gridSize; z++) {
+                const worldX = gridOffset + x * gridSpacing;
+                const worldZ = gridOffset + z * gridSpacing;
+                
+                const key = `${Math.round(worldX)},${Math.round(worldZ)}`;
+                const y = heightMap.has(key) ? heightMap.get(key) : 0;
+                
+                if (!mistPlacementPoints.some(p => 
+                    Math.abs(p.x - worldX) < gridSpacing * 0.5 && 
+                    Math.abs(p.z - worldZ) < gridSpacing * 0.5)) {
+                    
+                    mistPlacementPoints.push({
+                        x: worldX,
+                        y: y,
+                        z: worldZ,
+                        type: 'grid',
+                        priority: 0.5
+                    });
+                }
+            }
+        }
+        
+        console.log(`Total placement points: ${mistPlacementPoints.length}`);
+        
+        // Create optimized distribution - pre-calculate particles per point type
+        const valleyPoints = mistPlacementPoints.filter(p => p.type === 'valley');
+        const lowPoints = mistPlacementPoints.filter(p => p.type === 'lowPoint' || p.type === 'valley');
+        const gridPoints = mistPlacementPoints.filter(p => p.type === 'grid');
+        
+        // Calculate valley and low point particles
+        const valleyParticles = Math.floor(mistCount * 0.4);
+        const lowPointParticles = Math.floor(mistCount * 0.3);
+        const gridParticles = mistCount - valleyParticles - lowPointParticles;
+        
+        // Batch process particles by type for better cache locality
+        let particleIndex = 0;
+        
+        // Helper function to create an individual mist particle - MOVED UP before first usage
+        const createMistParticle = (placementPoint, radius, index, opacityFactor) => {
+            const angle = Math.random() * Math.PI * 2;
+            
+            const mistX = placementPoint.x + Math.cos(angle) * radius;
+            const mistZ = placementPoint.z + Math.sin(angle) * radius;
+            
+            // Create layered mist with height variation
+            const heightRandom = Math.pow(Math.random(), 2);
+            const mistY = placementPoint.y + heightRandom * mistHeight;
+            
+            // Set position
+            const idx = index * 3;
+            mistPositions[idx] = mistX;
+            mistPositions[idx + 1] = mistY;
+            mistPositions[idx + 2] = mistZ;
+            
+            // Set size based on height
+            const sizeVariation = 1.0 - (mistY - placementPoint.y) / mistHeight * 0.5;
+            const baseSize = (250 + Math.random() * 450) * sizeVariation * placementPoint.priority;
+            mistSizes[index] = baseSize;
+            this.mistParticleSizes[index] = baseSize;
+            
+            // Set color based on lighting mode
+            if (this.lightingMode === 'sunset') {
+                // Sunset mist with warmer tints
+                const warmth = Math.random() * 0.05;
+                mistColors[idx] = 0.98 - warmth;
+                mistColors[idx + 1] = 0.92 - warmth * 2;
+                mistColors[idx + 2] = 0.85 - warmth * 3;
+            } else {
+                // Daytime mist - blue tint
+                const blueAmount = Math.random() * 0.05;
+                mistColors[idx] = 0.95 - blueAmount;
+                mistColors[idx + 1] = 0.95;
+                mistColors[idx + 2] = 1.0;
+            }
+            
+            // Set opacity
+            const heightFactor = 1.0 - (mistY - placementPoint.y) / mistHeight * 0.6;
+            mistOpacities[index] = (0.12 + Math.random() * 0.15 * heightFactor) * opacityFactor;
+        };
+        
+        // Add valley particles
+        for (let i = 0; i < valleyParticles; i++) {
+            const pointIndex = Math.floor(Math.random() * valleyPoints.length);
+            const point = valleyPoints[pointIndex] || mistPlacementPoints[0];
+            
+            createMistParticle(
+                point, 
+                300 + Math.random() * 600, // radius
+                particleIndex,
+                1.0 // priority
+            );
+            particleIndex++;
+        }
+        
+        // Add low point particles
+        for (let i = 0; i < lowPointParticles; i++) {
+            const pointIndex = Math.floor(Math.random() * lowPoints.length);
+            const point = lowPoints[pointIndex] || mistPlacementPoints[0];
+            
+            createMistParticle(
+                point, 
+                500 + Math.random() * 1000, // radius
+                particleIndex,
+                0.8 // priority
+            );
+            particleIndex++;
+        }
+        
+        // Add grid particles - evenly distributed
+        for (let i = 0; i < gridParticles; i++) {
+            const pointIndex = Math.floor((i / gridParticles) * gridPoints.length);
+            const point = gridPoints[pointIndex % gridPoints.length] || mistPlacementPoints[0];
+            
+            createMistParticle(
+                point, 
+                gridSpacing * (0.3 + Math.random() * 0.5), // radius
+                particleIndex,
+                0.7 // priority
+            );
+            particleIndex++;
+        }
+        
+        // Create attributes
+        mistGeometry.setAttribute('position', new THREE.BufferAttribute(mistPositions, 3));
+        mistGeometry.setAttribute('size', new THREE.BufferAttribute(mistSizes, 1));
+        mistGeometry.setAttribute('color', new THREE.BufferAttribute(mistColors, 3));
+        mistGeometry.setAttribute('opacity', new THREE.BufferAttribute(mistOpacities, 1));
+        
+        // Create a softer texture for mist particles
+        const mistCanvas = document.createElement('canvas');
+        mistCanvas.width = 128; // Reduced from 256 for faster rendering
+        mistCanvas.height = 128;
+        const ctx = mistCanvas.getContext('2d');
+        
+        // Clear the canvas
+        ctx.clearRect(0, 0, 128, 128);
+        
+        // Create a soft radial gradient - simplified for performance
+        const gradient = ctx.createRadialGradient(
+            64, 64, 0,
+            64, 64, 64
+        );
+        
+        // Fewer color stops for faster rendering
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+        gradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.3)');
+        gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.1)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 128, 128);
+        
+        // Skip the noise texture for better performance
+        
+        const mistTexture = new THREE.CanvasTexture(mistCanvas);
+        mistTexture.needsUpdate = true;
+        
+        // Create a simpler shader that doesn't move particles
+        const mistVertexShader = `
+            attribute float size;
+            attribute vec3 color;
+            attribute float opacity;
+            
+            varying vec3 vColor;
+            varying float vOpacity;
+            
+            void main() {
+                // Pass color and opacity to fragment shader
+                vColor = color;
+                vOpacity = opacity;
+                
+                // Static position - no movement
+                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                
+                // Simpler size calculation
+                float sizeScale = 350.0 / -mvPosition.z;
+                sizeScale = min(sizeScale, 2.5);
+                
+                gl_PointSize = size * sizeScale;
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `;
+        
+        const mistFragmentShader = `
+            uniform sampler2D mistTexture;
+            
+            varying vec3 vColor;
+            varying float vOpacity;
+            
+            void main() {
+                // Sample texture
+                vec4 texColor = texture2D(mistTexture, gl_PointCoord);
+                
+                // Simple transparency
+                float alpha = texColor.a * vOpacity;
+                
+                // Combine with color
+                gl_FragColor = vec4(vColor, alpha);
+                
+                // Discard near-transparent pixels
+                if (gl_FragColor.a < 0.01) discard;
+            }
+        `;
+        
+        // Create simplified material
+        this.mistParticleMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                mistTexture: { value: mistTexture }
+                // Removed time uniform since we don't animate
+            },
+            vertexShader: mistVertexShader,
+            fragmentShader: mistFragmentShader,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.CustomBlending,
+            blendSrc: THREE.SrcAlphaFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor,
+            blendEquation: THREE.AddEquation
+        });
+        
+        // Create particle system
+        this.mistParticleSystem = new THREE.Points(mistGeometry, this.mistParticleMaterial);
+        this.scene.add(this.mistParticleSystem);
+        
+        console.log('Added optimized static mist across the map');
+    }
+
+    // Update mist animation in render loop - removed all movement for performance
+    updateMist(deltaTime) {
+        // No updates needed for static mist
     }
 } 
