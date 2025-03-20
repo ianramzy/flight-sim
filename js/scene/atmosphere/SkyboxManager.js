@@ -3,21 +3,34 @@ class SkyboxManager {
         this.scene = scene;
         this.lighting = lighting;
         this.fogDensityFactor = 2.5; // Default fog density factor
+        this.onLoaded = null; // Callback function for loading completion
         
         this.createSkybox();
     }
     
     createSkybox() {
-        console.log('Creating skybox with consistent scale with terrain and fog');
-        const groundSize = 20000; // Consistent scale definition
-        console.log('World scale values:');
-        console.log('- Ground size: ' + groundSize);
-        console.log('- Fog distance: ' + (1/0.00015) + ' units'); // Log fog visibility distance
-        
-        this.updateSkybox(groundSize);
-        
-        // Add fog to create distance haze effect
-        this.updateFog(groundSize);
+        try {
+            console.log('Creating skybox with consistent scale with terrain and fog');
+            const groundSize = 20000; // Consistent scale definition
+            console.log('World scale values:');
+            console.log('- Ground size: ' + groundSize);
+            console.log('- Fog distance: ' + (1/0.00015) + ' units'); // Log fog visibility distance
+            
+            this.updateSkybox(groundSize);
+            
+            // Add fog to create distance haze effect
+            this.updateFog(groundSize);
+            
+            console.log('Skybox generation complete');
+        } catch (error) {
+            console.error('Error creating skybox:', error);
+        } finally {
+            // Signal that skybox is loaded, even if there was an error
+            if (typeof this.onLoaded === 'function') {
+                console.log('SkyboxManager signaling onLoaded callback');
+                this.onLoaded();
+            }
+        }
     }
     
     updateSkybox(groundSize) {

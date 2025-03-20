@@ -2,169 +2,182 @@ class TerrainGenerator {
     constructor(scene) {
         this.scene = scene;
         this.terrainHeightScale = 250; // Default height scale for terrain
+        this.onLoaded = null; // Callback function for loading completion
         
         this.createTerrain();
     }
     
     createTerrain() {
-        // Use consistent groundSize across the application
-        const groundSize = 20000; // Size for terrain
-        console.log('Creating terrain with ground size:', groundSize);
-        console.log('Creating terrain with steep hills and canyons');
-        
-        // Create terrain with rolling hills
-        const resolution = 256; // Resolution for terrain
-        const heightMapSize = resolution;
-        
-        // Create height map
-        const heightMap = this.generateRollingHillsHeightMap(heightMapSize);
-        
-        // Log some height map values to check if they're reasonable
-        console.log('Height map samples:');
-        console.log('Center:', heightMap[Math.floor(heightMapSize/2)][Math.floor(heightMapSize/2)]);
-        console.log('Top-left:', heightMap[0][0]);
-        console.log('Bottom-right:', heightMap[heightMapSize-1][heightMapSize-1]);
-        
-        // Use BufferGeometry for better control over vertex positions
-        const terrainGeometry = new THREE.BufferGeometry();
-        const positions = [];
-        const colors = [];
-        const uvs = []; // Add UVs for texture mapping
-        
-        // Use a higher height scale for steeper hills
-        const heightScale = this.terrainHeightScale; // Increased for more dramatic hills
-        
-        // Define water level threshold (points below this height will be water)
-        const waterThreshold = 0.6;
-        
-        // Track water vertices for later use
-        const waterVertices = [];
-        const waterIndices = [];
+        try {
+            // Use consistent groundSize across the application
+            const groundSize = 20000; // Size for terrain
+            console.log('Creating terrain with ground size:', groundSize);
+            console.log('Creating terrain with steep hills and canyons');
+            
+            // Create terrain with rolling hills
+            const resolution = 256; // Resolution for terrain
+            const heightMapSize = resolution;
+            
+            // Create height map
+            const heightMap = this.generateRollingHillsHeightMap(heightMapSize);
+            
+            // Log some height map values to check if they're reasonable
+            console.log('Height map samples:');
+            console.log('Center:', heightMap[Math.floor(heightMapSize/2)][Math.floor(heightMapSize/2)]);
+            console.log('Top-left:', heightMap[0][0]);
+            console.log('Bottom-right:', heightMap[heightMapSize-1][heightMapSize-1]);
+            
+            // Use BufferGeometry for better control over vertex positions
+            const terrainGeometry = new THREE.BufferGeometry();
+            const positions = [];
+            const colors = [];
+            const uvs = []; // Add UVs for texture mapping
+            
+            // Use a higher height scale for steeper hills
+            const heightScale = this.terrainHeightScale; // Increased for more dramatic hills
+            
+            // Define water level threshold (points below this height will be water)
+            const waterThreshold = 0.6;
+            
+            // Track water vertices for later use
+            const waterVertices = [];
+            const waterIndices = [];
 
-        // Create vertices for the terrain
-        for (let z = 0; z < resolution; z++) {
-            for (let x = 0; x < resolution; x++) {
-                // Calculate position
-                const xPos = (x / (resolution - 1) - 0.5) * groundSize;
-                const zPos = (z / (resolution - 1) - 0.5) * groundSize;
-                
-                // Get height from the heightmap
-                let height = 0;
-                if (x < heightMapSize && z < heightMapSize) {
-                    height = heightMap[z][x] * heightScale;
+            // Create vertices for the terrain
+            for (let z = 0; z < resolution; z++) {
+                for (let x = 0; x < resolution; x++) {
+                    // Calculate position
+                    const xPos = (x / (resolution - 1) - 0.5) * groundSize;
+                    const zPos = (z / (resolution - 1) - 0.5) * groundSize;
+                    
+                    // Get height from the heightmap
+                    let height = 0;
+                    if (x < heightMapSize && z < heightMapSize) {
+                        height = heightMap[z][x] * heightScale;
+                    }
+                    
+                    // Add position (note: in THREE.js, Y is up)
+                    positions.push(xPos, height, zPos);
+                    
+                    // Add UV coordinates for texture mapping
+                    uvs.push(x / (resolution - 1), z / (resolution - 1));
+                    
+                    // Check if this is a water vertex (below threshold)
+                    const isWater = heightMap[z][x] < waterThreshold;
+                    
+                    // Save water vertex information for later creation of water surface
+                    if (isWater) {
+                        // Store the index of this vertex
+                        waterVertices.push(x + z * resolution);
+                    }
+                    
+                    // Add color based on height for better visual cues
+                    const heightRatio = height / heightScale;
+                    
+                    // Apply different colors based on height
+                    let r, g, b;
+                    if (isWater) {
+                        // Water colors (blue instead of teal)
+                        r = 0.0;
+                        g = 0.3;
+                        b = 0.9;
+                    } else {
+                        // Land colors (similar to before but slightly adjusted)
+                        r = 0.95 - heightRatio * 0.05;
+                        g = 0.95 + heightRatio * 0.05;
+                        b = 0.95 - heightRatio * 0.05;
+                    }
+                    
+                    colors.push(r, g, b);
                 }
-                
-                // Add position (note: in THREE.js, Y is up)
-                positions.push(xPos, height, zPos);
-                
-                // Add UV coordinates for texture mapping
-                uvs.push(x / (resolution - 1), z / (resolution - 1));
-                
-                // Check if this is a water vertex (below threshold)
-                const isWater = heightMap[z][x] < waterThreshold;
-                
-                // Save water vertex information for later creation of water surface
-                if (isWater) {
-                    // Store the index of this vertex
-                    waterVertices.push(x + z * resolution);
+            }
+            
+            // Create indices for faces
+            const indices = [];
+            for (let z = 0; z < resolution - 1; z++) {
+                for (let x = 0; x < resolution - 1; x++) {
+                    const a = x + z * resolution;
+                    const b = (x + 1) + z * resolution;
+                    const c = x + (z + 1) * resolution;
+                    const d = (x + 1) + (z + 1) * resolution;
+                    
+                    // Two triangles per grid square
+                    indices.push(a, c, b);
+                    indices.push(c, d, b);
                 }
-                
-                // Add color based on height for better visual cues
-                const heightRatio = height / heightScale;
-                
-                // Apply different colors based on height
-                let r, g, b;
-                if (isWater) {
-                    // Water colors (blue instead of teal)
-                    r = 0.0;
-                    g = 0.3;
-                    b = 0.9;
-                } else {
-                    // Land colors (similar to before but slightly adjusted)
-                    r = 0.95 - heightRatio * 0.05;
-                    g = 0.95 + heightRatio * 0.05;
-                    b = 0.95 - heightRatio * 0.05;
+            }
+            
+            // Set the attributes
+            terrainGeometry.setIndex(indices);
+            terrainGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            terrainGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            terrainGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            terrainGeometry.computeVertexNormals();
+            
+            // Create terrain material with vertex colors for better visual cues
+            const terrainMaterial = new THREE.MeshStandardMaterial({
+                vertexColors: true,  // Use vertex colors
+                roughness: 0.9,      // Increased roughness for grass
+                metalness: 0.0,      // No metalness for natural look
+                flatShading: false,  // Smooth shading for more natural look
+                map: null,           // Will set this later
+                onBeforeCompile: (shader) => {
+                    // Add custom fog handling to the shader
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <fog_fragment>',
+                        `
+                        #include <fog_fragment>
+                        // Custom fog handling that reduces fog at higher altitudes
+                        // Use a sharper transition to keep fog very low to the ground
+                        float heightFactor = 1.0 - smoothstep(0.0, 5.0, vViewPosition.y);
+                        gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor * heightFactor);
+                        `
+                    );
                 }
-                
-                colors.push(r, g, b);
+            });
+            
+            // Add grass texture to the terrain - using a different URL for better visibility
+            const textureLoader = new THREE.TextureLoader();
+            const grassTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/terrain/grasslight-big.jpg');
+            grassTexture.wrapS = THREE.RepeatWrapping;
+            grassTexture.wrapT = THREE.RepeatWrapping;
+            // Make texture repeat much more frequently for visibility on the hills
+            grassTexture.repeat.set(200, 200); // Much higher repeat value for better visibility
+            
+            // Apply the texture
+            terrainMaterial.map = grassTexture;
+            terrainMaterial.color = new THREE.Color(0xffffff); // Set color to white to let texture show through
+            terrainMaterial.needsUpdate = true;
+            
+            // Create and position the terrain mesh
+            const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
+            terrain.receiveShadow = true;
+            terrain.castShadow = true;
+            terrain.name = 'terrain';
+            
+            this.scene.add(terrain);
+            
+            // Add trees and bushes
+            this.addTreesAndBushes(heightMap, resolution, groundSize);
+            
+            // Add water surface
+            this.createWaterSurface(heightMap, resolution, groundSize, waterThreshold, heightScale);
+            
+            // Store the height map for other modules to use
+            this.heightMap = heightMap;
+            this.resolution = resolution;
+            this.groundSize = groundSize;
+            
+            console.log('Terrain generation complete');
+        } catch (error) {
+            console.error('Error generating terrain:', error);
+        } finally {
+            // Signal that terrain is loaded, even if there was an error
+            if (typeof this.onLoaded === 'function') {
+                console.log('TerrainGenerator signaling onLoaded callback');
+                this.onLoaded();
             }
         }
-        
-        // Create indices for faces
-        const indices = [];
-        for (let z = 0; z < resolution - 1; z++) {
-            for (let x = 0; x < resolution - 1; x++) {
-                const a = x + z * resolution;
-                const b = (x + 1) + z * resolution;
-                const c = x + (z + 1) * resolution;
-                const d = (x + 1) + (z + 1) * resolution;
-                
-                // Two triangles per grid square
-                indices.push(a, c, b);
-                indices.push(c, d, b);
-            }
-        }
-        
-        // Set the attributes
-        terrainGeometry.setIndex(indices);
-        terrainGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        terrainGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        terrainGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-        terrainGeometry.computeVertexNormals();
-        
-        // Create terrain material with vertex colors for better visual cues
-        const terrainMaterial = new THREE.MeshStandardMaterial({
-            vertexColors: true,  // Use vertex colors
-            roughness: 0.9,      // Increased roughness for grass
-            metalness: 0.0,      // No metalness for natural look
-            flatShading: false,  // Smooth shading for more natural look
-            map: null,           // Will set this later
-            onBeforeCompile: (shader) => {
-                // Add custom fog handling to the shader
-                shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <fog_fragment>',
-                    `
-                    #include <fog_fragment>
-                    // Custom fog handling that reduces fog at higher altitudes
-                    // Use a sharper transition to keep fog very low to the ground
-                    float heightFactor = 1.0 - smoothstep(0.0, 5.0, vViewPosition.y);
-                    gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor * heightFactor);
-                    `
-                );
-            }
-        });
-        
-        // Add grass texture to the terrain - using a different URL for better visibility
-        const textureLoader = new THREE.TextureLoader();
-        const grassTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/terrain/grasslight-big.jpg');
-        grassTexture.wrapS = THREE.RepeatWrapping;
-        grassTexture.wrapT = THREE.RepeatWrapping;
-        // Make texture repeat much more frequently for visibility on the hills
-        grassTexture.repeat.set(200, 200); // Much higher repeat value for better visibility
-        
-        // Apply the texture
-        terrainMaterial.map = grassTexture;
-        terrainMaterial.color = new THREE.Color(0xffffff); // Set color to white to let texture show through
-        terrainMaterial.needsUpdate = true;
-        
-        // Create and position the terrain mesh
-        const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
-        terrain.receiveShadow = true;
-        terrain.castShadow = true;
-        terrain.name = 'terrain';
-        
-        this.scene.add(terrain);
-        
-        // Add trees and bushes
-        this.addTreesAndBushes(heightMap, resolution, groundSize);
-        
-        // Add water surface
-        this.createWaterSurface(heightMap, resolution, groundSize, waterThreshold, heightScale);
-        
-        // Store the height map for other modules to use
-        this.heightMap = heightMap;
-        this.resolution = resolution;
-        this.groundSize = groundSize;
     }
     
     generateRollingHillsHeightMap(size) {
