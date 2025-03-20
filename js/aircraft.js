@@ -44,13 +44,13 @@ class Aircraft {
     setupCameras() {
         // Setup third-person camera
         this.thirdPersonCamera = new THREE.PerspectiveCamera(
-            75, window.innerWidth / window.innerHeight, 0.1, 20000
+            75, window.innerWidth / window.innerHeight, 0.1, 40000
         );
         this.thirdPersonCamera.position.set(0, 10, -30);
         
         // Setup first-person (cockpit) camera
         this.firstPersonCamera = new THREE.PerspectiveCamera(
-            75, window.innerWidth / window.innerHeight, 0.1, 20000
+            75, window.innerWidth / window.innerHeight, 0.1, 40000
         );
         this.firstPersonCamera.position.set(0, 3, 0);
         
