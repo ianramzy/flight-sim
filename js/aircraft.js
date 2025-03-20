@@ -39,6 +39,11 @@ class Aircraft {
         
         // Load aircraft model
         this.loadModel();
+        
+        // Shooting mechanics
+        this.projectiles = [];
+        this.lastShotTime = 0;
+        this.shootingCooldown = 83; // Halved again from 167ms to 83ms for double fire rate
     }
     
     setupCameras() {
@@ -59,62 +64,189 @@ class Aircraft {
     }
     
     loadModel() {
-        // Create a temporary aircraft representation (a simple plane shape)
-        const geometry = new THREE.ConeGeometry(2, 10, 4);
-        geometry.rotateX(Math.PI / 2);
-        const material = new THREE.MeshStandardMaterial({ 
-            color: 0x4285F4,
-            metalness: 0.5,
-            roughness: 0.5
-        });
-        
+        // Create a cooler aircraft representation
         this.model = new THREE.Group();
-        const fuselage = new THREE.Mesh(geometry, material);
+        
+        // Create fuselage (main body) - sleeker and more aerodynamic
+        const fuselageGeometry = new THREE.CylinderGeometry(1.5, 1, 12, 12);
+        fuselageGeometry.rotateX(Math.PI / 2);
+        const fuselageMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x2C3539, // Dark gunmetal color
+            metalness: 0.8,
+            roughness: 0.2
+        });
+        const fuselage = new THREE.Mesh(fuselageGeometry, fuselageMaterial);
         this.model.add(fuselage);
         
-        // Add wings
-        const wingGeometry = new THREE.BoxGeometry(20, 0.5, 4);
+        // Create cockpit - glass canopy
+        const cockpitGeometry = new THREE.SphereGeometry(1.5, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+        cockpitGeometry.scale(1, 0.6, 1.5);
+        cockpitGeometry.rotateX(Math.PI);
+        cockpitGeometry.translate(0, 0, -2);
+        const cockpitMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x87CEEB, // Sky blue
+            transparent: true,
+            opacity: 0.7,
+            metalness: 0.9,
+            roughness: 0.1
+        });
+        const cockpit = new THREE.Mesh(cockpitGeometry, cockpitMaterial);
+        cockpit.position.set(0, 1, 0);
+        this.model.add(cockpit);
+        
+        // Add wings - sleeker swept-back design
+        const wingGeometry = new THREE.BoxGeometry(22, 0.3, 4);
+        // Modify wing vertices to make them swept-back
+        const wingPositions = wingGeometry.attributes.position;
+        for (let i = 0; i < wingPositions.count; i++) {
+            const x = wingPositions.getX(i);
+            const z = wingPositions.getZ(i);
+            // Apply sweep-back effect (move back vertices backward)
+            if (x < 0) {
+                wingPositions.setZ(i, z - 3);
+            } else {
+                wingPositions.setZ(i, z - 3);
+            }
+            // Add slight dihedral (upward angle)
+            if (Math.abs(x) > 5) {
+                wingPositions.setY(i, wingPositions.getY(i) + Math.abs(x) * 0.05);
+            }
+        }
+        
         const wingMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x4285F4,
-            metalness: 0.5,
-            roughness: 0.5
+            color: 0x3D85C6, // Blue
+            metalness: 0.7,
+            roughness: 0.3
         });
         const wings = new THREE.Mesh(wingGeometry, wingMaterial);
         wings.position.set(0, 0, 0);
         this.model.add(wings);
         
-        // Add tail
-        const tailGeometry = new THREE.BoxGeometry(6, 0.5, 2);
+        // Add wingtips - vertical stabilizers at the ends of wings
+        const wingtipGeometry = new THREE.BoxGeometry(0.5, 1.2, 2);
+        const wingtipMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xE06666, // Red accent
+            metalness: 0.7,
+            roughness: 0.3
+        });
+        
+        // Left wingtip
+        const leftWingtip = new THREE.Mesh(wingtipGeometry, wingtipMaterial);
+        leftWingtip.position.set(-11, 0.5, -2);
+        this.model.add(leftWingtip);
+        
+        // Right wingtip
+        const rightWingtip = new THREE.Mesh(wingtipGeometry, wingtipMaterial);
+        rightWingtip.position.set(11, 0.5, -2);
+        this.model.add(rightWingtip);
+        
+        // Add tail - more elaborate tail section
+        const tailGeometry = new THREE.BoxGeometry(7, 0.3, 3);
+        // Taper the tail
+        const tailPositions = tailGeometry.attributes.position;
+        for (let i = 0; i < tailPositions.count; i++) {
+            const z = tailPositions.getZ(i);
+            // Taper width at the back
+            if (z < 0) {
+                const factor = 1 + z * 0.2;
+                tailPositions.setX(i, tailPositions.getX(i) * factor);
+            }
+        }
+        
         const tailMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x4285F4,
-            metalness: 0.5,
-            roughness: 0.5
+            color: 0x3D85C6, // Blue to match wings
+            metalness: 0.7,
+            roughness: 0.3
         });
         const tail = new THREE.Mesh(tailGeometry, tailMaterial);
         tail.position.set(0, 0, -5);
         this.model.add(tail);
         
-        // Add vertical stabilizer
-        const stabilizerGeometry = new THREE.BoxGeometry(0.5, 3, 2);
+        // Add vertical stabilizer - taller and sleeker
+        const stabilizerGeometry = new THREE.BoxGeometry(0.3, 3, 4);
+        // Taper the stabilizer
+        const stabPositions = stabilizerGeometry.attributes.position;
+        for (let i = 0; i < stabPositions.count; i++) {
+            const z = stabPositions.getZ(i);
+            // Create a more aerodynamic shape
+            if (z < 0) {
+                const factor = 1 + z * 0.1;
+                stabPositions.setY(i, stabPositions.getY(i) * factor);
+            }
+        }
+        
         const stabilizerMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x4285F4,
-            metalness: 0.5,
-            roughness: 0.5
+            color: 0xE06666, // Red accent
+            metalness: 0.7,
+            roughness: 0.3
         });
         const stabilizer = new THREE.Mesh(stabilizerGeometry, stabilizerMaterial);
-        stabilizer.position.set(0, 1.5, -5);
+        stabilizer.position.set(0, 1.7, -5);
         this.model.add(stabilizer);
         
-        // Add propeller
-        const propellerGeometry = new THREE.BoxGeometry(0.5, 4, 0.5);
+        // Add horizontal stabilizers
+        const hStabilizerGeometry = new THREE.BoxGeometry(7, 0.2, 2);
+        const hStabilizerMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3D85C6, // Blue
+            metalness: 0.7,
+            roughness: 0.3
+        });
+        const hStabilizer = new THREE.Mesh(hStabilizerGeometry, hStabilizerMaterial);
+        hStabilizer.position.set(0, 1.5, -6);
+        this.model.add(hStabilizer);
+        
+        // Add engines
+        const engineGeometry = new THREE.CylinderGeometry(0.7, 0.8, 3, 12);
+        const engineMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x444444, // Dark gray
+            metalness: 0.9,
+            roughness: 0.2
+        });
+        
+        // Left engine
+        const leftEngine = new THREE.Mesh(engineGeometry, engineMaterial);
+        leftEngine.rotation.x = Math.PI / 2;
+        leftEngine.position.set(-5, -0.5, 1);
+        this.model.add(leftEngine);
+        
+        // Right engine
+        const rightEngine = new THREE.Mesh(engineGeometry, engineMaterial);
+        rightEngine.rotation.x = Math.PI / 2;
+        rightEngine.position.set(5, -0.5, 1);
+        this.model.add(rightEngine);
+        
+        // Add propellers
+        const propellerGeometry = new THREE.BoxGeometry(0.2, 3, 0.2);
         const propellerMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x333333,
+            color: 0x333333, // Dark gray
             metalness: 0.8,
             roughness: 0.2
         });
-        this.propeller = new THREE.Mesh(propellerGeometry, propellerMaterial);
-        this.propeller.position.set(0, 0, 5);
-        this.model.add(this.propeller);
+        
+        // Left propeller
+        this.leftPropeller = new THREE.Mesh(propellerGeometry, propellerMaterial);
+        this.leftPropeller.position.set(-5, -0.5, 2.7);
+        this.model.add(this.leftPropeller);
+        
+        // Right propeller
+        this.rightPropeller = new THREE.Mesh(propellerGeometry, propellerMaterial);
+        this.rightPropeller.position.set(5, -0.5, 2.7);
+        this.model.add(this.rightPropeller);
+        
+        // Add a main propeller for backward compatibility
+        this.propeller = this.leftPropeller;
+        
+        // Add small details - nose cone
+        const noseConeGeometry = new THREE.ConeGeometry(1.5, 2, 12);
+        noseConeGeometry.rotateX(-Math.PI / 2);
+        const noseConeMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xE06666, // Red accent
+            metalness: 0.7,
+            roughness: 0.3
+        });
+        const noseCone = new THREE.Mesh(noseConeGeometry, noseConeMaterial);
+        noseCone.position.set(0, 0, 6);
+        this.model.add(noseCone);
         
         // Position the model and add to scene
         this.model.position.copy(this.position);
@@ -126,10 +258,81 @@ class Aircraft {
         this.modelLoaded = true;
     }
     
+    shoot() {
+        const currentTime = performance.now();
+        if (currentTime - this.lastShotTime < this.shootingCooldown) return;
+        
+        this.lastShotTime = currentTime;
+        
+        // Create cylindrical projectile instead of sphere
+        const projectileGeometry = new THREE.CylinderGeometry(0.5, 0.5, 4, 8);
+        projectileGeometry.rotateX(Math.PI / 2); // Rotate to align with direction of travel
+        const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const projectile = new THREE.Mesh(projectileGeometry, projectileMaterial);
+        
+        // Calculate spawn position (in front of the aircraft)
+        const spawnOffset = new THREE.Vector3(0, 0, 10);
+        spawnOffset.applyEuler(this.rotation);
+        const spawnPosition = this.position.clone().add(spawnOffset);
+        projectile.position.copy(spawnPosition);
+        
+        // Calculate projectile direction (forward vector of the aircraft)
+        const direction = new THREE.Vector3(0, 0, 1);
+        direction.applyEuler(this.rotation);
+        
+        // Apply rotation to match direction
+        projectile.setRotationFromEuler(this.rotation.clone());
+        
+        // Store projectile data
+        const projectileData = {
+            mesh: projectile,
+            direction: direction,
+            speed: 1200, // Doubled again from 600 to 1200 meters per second
+            distance: 0,
+            maxDistance: 1000, // Maximum travel distance
+            createdAt: currentTime
+        };
+        
+        this.projectiles.push(projectileData);
+        this.scene.add(projectile);
+    }
+    
+    updateProjectiles(deltaTime) {
+        const projectilesToRemove = [];
+        
+        for (let i = 0; i < this.projectiles.length; i++) {
+            const projectile = this.projectiles[i];
+            
+            // Update position
+            const distanceThisFrame = projectile.speed * deltaTime;
+            projectile.distance += distanceThisFrame;
+            
+            const movement = projectile.direction.clone().multiplyScalar(distanceThisFrame);
+            projectile.mesh.position.add(movement);
+            
+            // Check if projectile should be removed (traveled max distance)
+            if (projectile.distance >= projectile.maxDistance) {
+                projectilesToRemove.push(i);
+            }
+        }
+        
+        // Remove projectiles that are out of range
+        for (let i = projectilesToRemove.length - 1; i >= 0; i--) {
+            const index = projectilesToRemove[i];
+            const projectile = this.projectiles[index];
+            
+            this.scene.remove(projectile.mesh);
+            this.projectiles.splice(index, 1);
+        }
+    }
+    
     update(deltaTime) {
-        // Update propeller rotation based on throttle
-        if (this.propeller) {
-            this.propeller.rotation.z += this.controls.throttle * 20 * deltaTime;
+        // Update propeller rotations based on throttle
+        if (this.leftPropeller) {
+            this.leftPropeller.rotation.x += this.controls.throttle * 20 * deltaTime;
+        }
+        if (this.rightPropeller) {
+            this.rightPropeller.rotation.x += this.controls.throttle * 20 * deltaTime;
         }
         
         // Calculate forces
@@ -168,6 +371,9 @@ class Aircraft {
             // Update model rotation
             this.model.rotation.copy(this.rotation);
         }
+        
+        // Update projectiles
+        this.updateProjectiles(deltaTime);
         
         // Update cameras
         this.updateCameras();

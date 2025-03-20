@@ -16,19 +16,27 @@ class FlightSimulator {
         // Create aircraft
         this.aircraft = new Aircraft(this.sceneManager.scene);
         
-        // Create AI aircraft (10 of them with different colors)
-        this.aiAircraft = [
-            new AIAircraft(this.sceneManager.scene, null, 0xFF5252), // Red
-            new AIAircraft(this.sceneManager.scene, null, 0x4CAF50), // Green
-            new AIAircraft(this.sceneManager.scene, null, 0x2196F3), // Blue
-            new AIAircraft(this.sceneManager.scene, null, 0xFFC107), // Amber
-            new AIAircraft(this.sceneManager.scene, null, 0x9C27B0), // Purple
-            new AIAircraft(this.sceneManager.scene, null, 0xFF9800), // Orange
-            new AIAircraft(this.sceneManager.scene, null, 0x795548), // Brown
-            new AIAircraft(this.sceneManager.scene, null, 0x009688), // Teal
-            new AIAircraft(this.sceneManager.scene, null, 0xE91E63), // Pink
-            new AIAircraft(this.sceneManager.scene, null, 0xFFEB3B)  // Yellow
+        // Create 100 AI aircraft with random colors
+        this.aiAircraft = [];
+        const baseColors = [
+            0xFF5252, // Red
+            0x4CAF50, // Green
+            0x2196F3, // Blue
+            0xFFC107, // Amber
+            0x9C27B0, // Purple
+            0xFF9800, // Orange
+            0x795548, // Brown
+            0x009688, // Teal
+            0xE91E63, // Pink
+            0xFFEB3B  // Yellow
         ];
+        
+        // Create 100 AI aircraft
+        for (let i = 0; i < 100; i++) {
+            // For first 10 aircraft, use predefined colors, then use random colors
+            const color = i < 10 ? baseColors[i] : Math.random() * 0xFFFFFF;
+            this.aiAircraft.push(new AIAircraft(this.sceneManager.scene, null, color));
+        }
         
         // Make aircraft instance globally accessible for performance monitoring
         window.aircraftInstance = this.aircraft;
@@ -45,6 +53,70 @@ class FlightSimulator {
         
         // Start the animation loop
         this.animate();
+    }
+    
+    checkProjectileCollisions() {
+        if (!this.aircraft.projectiles.length) return;
+        
+        // Hot air balloon collision detection
+        const balloons = this.sceneManager.balloons ? this.sceneManager.balloons.balloons : [];
+        const projectiles = this.aircraft.projectiles;
+        
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            const projectile = projectiles[i];
+            const projectilePos = projectile.mesh.position;
+            
+            // Check collisions with hot air balloons - 1 point each
+            for (let j = balloons.length - 1; j >= 0; j--) {
+                const balloon = balloons[j];
+                const balloonPos = balloon.position;
+                
+                // Simple distance-based collision detection (sphere vs sphere)
+                const distance = projectilePos.distanceTo(balloonPos);
+                if (distance < 25) { // Balloon radius is around 20
+                    // Award 1 point
+                    this.ui.addPoints(1);
+                    
+                    // Remove balloon
+                    this.sceneManager.scene.remove(balloon);
+                    balloons.splice(j, 1);
+                    
+                    // Remove projectile
+                    this.sceneManager.scene.remove(projectile.mesh);
+                    projectiles.splice(i, 1);
+                    
+                    // Skip checking other targets for this projectile
+                    break;
+                }
+            }
+            
+            // If the projectile was removed, skip to the next one
+            if (i >= projectiles.length) continue;
+            
+            // Check collisions with AI aircraft - 5 points each
+            for (let j = this.aiAircraft.length - 1; j >= 0; j--) {
+                const ai = this.aiAircraft[j];
+                const aiPos = ai.position;
+                
+                // Simple distance-based collision detection
+                const distance = projectilePos.distanceTo(aiPos);
+                if (distance < 15) { // Aircraft size is smaller than balloon
+                    // Award 5 points
+                    this.ui.addPoints(5);
+                    
+                    // Reset AI position to somewhere random
+                    ai.resetToSafeState();
+                    
+                    // Update AI aircraft count in UI
+                    this.ui.updateAICount(this.aiAircraft.length);
+                    
+                    // Remove projectile
+                    this.sceneManager.scene.remove(projectile.mesh);
+                    projectiles.splice(i, 1);
+                    break;
+                }
+            }
+        }
     }
     
     animate(currentTime = 0) {
@@ -66,6 +138,9 @@ class FlightSimulator {
             for (const ai of this.aiAircraft) {
                 ai.update(deltaTime);
             }
+            
+            // Check for collisions between projectiles and targets
+            this.checkProjectileCollisions();
             
             // Update UI
             this.ui.update(this.aircraft, currentTime);
@@ -139,6 +214,9 @@ window.addEventListener('load', () => {
                 break;
             case 'control':
                 simulator.aircraft.controls.throttle = Math.max(0, simulator.aircraft.controls.throttle - 0.1);
+                break;
+            case 'enter':
+                simulator.aircraft.shoot();
                 break;
         }
     });

@@ -171,6 +171,40 @@ class UIControls {
             controlsDiv.appendChild(controlItem);
         });
         
+        // Add pitch inversion toggle
+        const pitchInversionDiv = document.createElement('div');
+        pitchInversionDiv.style.marginTop = '15px';
+        pitchInversionDiv.style.padding = '5px';
+        pitchInversionDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
+        pitchInversionDiv.style.borderRadius = '5px';
+        
+        const pitchInversionLabel = document.createElement('label');
+        pitchInversionLabel.textContent = 'Invert Pitch Controls: ';
+        pitchInversionLabel.style.marginRight = '10px';
+        
+        const pitchInversionCheckbox = document.createElement('input');
+        pitchInversionCheckbox.type = 'checkbox';
+        pitchInversionCheckbox.id = 'invert-pitch';
+        
+        // Initialize the checkbox state from localStorage if available
+        const invertPitchStored = localStorage.getItem('invertPitch');
+        const invertPitch = invertPitchStored ? invertPitchStored === 'true' : false;
+        pitchInversionCheckbox.checked = invertPitch;
+        
+        // Set the global setting
+        window.invertPitch = invertPitch;
+        
+        // Add event listener to the checkbox
+        pitchInversionCheckbox.addEventListener('change', (event) => {
+            const isInverted = event.target.checked;
+            window.invertPitch = isInverted;
+            localStorage.setItem('invertPitch', isInverted);
+        });
+        
+        pitchInversionDiv.appendChild(pitchInversionLabel);
+        pitchInversionDiv.appendChild(pitchInversionCheckbox);
+        controlsDiv.appendChild(pitchInversionDiv);
+        
         // Remove the original controls info element if it exists
         const controlsInfo = document.getElementById('controls-info');
         if (controlsInfo) {
