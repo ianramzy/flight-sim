@@ -22,7 +22,10 @@ class SceneManager {
         this.createPerformanceTestButton();
         
         // Add lighting mode state
-        this.lightingMode = 'daytime'; // Changed default from 'sunset' to 'daytime'
+        this.lightingMode = 'sunset'; // Default to sunset mode
+        
+        // Default fog density factor
+        this.fogDensityFactor = 2.5;
         
         this.setupLights();
         this.createSkybox();
@@ -34,12 +37,15 @@ class SceneManager {
         
         // Add UI control for lighting toggle
         this.createLightingToggle();
+        
+        // Add UI control for fog
+        this.createFogControls();
     }
 
     createLightingToggle() {
         // Create a simple button for toggling lighting
         const toggleButton = document.createElement('button');
-        toggleButton.textContent = 'Switch to Sunset'; // Updated text to match default daytime mode
+        toggleButton.textContent = 'Switch to Daytime'; // Updated for sunset default
         toggleButton.style.position = 'fixed';
         toggleButton.style.top = '20px'; // Same top position as view-toggle
         toggleButton.style.left = '120px'; // Position to the right of the toggle view button
@@ -108,7 +114,75 @@ class SceneManager {
         document.body.appendChild(perfButton);
     }
     
+    createFogControls() {
+        // Create container for fog controls
+        const fogControlContainer = document.createElement('div');
+        fogControlContainer.style.position = 'fixed';
+        fogControlContainer.style.bottom = '20px';
+        fogControlContainer.style.right = '20px';
+        fogControlContainer.style.padding = '10px';
+        fogControlContainer.style.background = 'rgba(0, 0, 0, 0.5)';
+        fogControlContainer.style.color = 'white';
+        fogControlContainer.style.border = '1px solid white';
+        fogControlContainer.style.zIndex = '1000';
+        fogControlContainer.style.display = 'flex';
+        fogControlContainer.style.flexDirection = 'column';
+        fogControlContainer.style.alignItems = 'center';
+        fogControlContainer.style.gap = '5px';
+        
+        // Add label
+        const fogLabel = document.createElement('div');
+        fogLabel.textContent = 'Fog Intensity';
+        fogControlContainer.appendChild(fogLabel);
+        
+        // Create slider for fog density
+        const fogSlider = document.createElement('input');
+        fogSlider.type = 'range';
+        fogSlider.min = '0';
+        fogSlider.max = '5';
+        fogSlider.step = '0.1';
+        fogSlider.value = this.fogDensityFactor;
+        fogSlider.style.width = '150px';
+        
+        // Value display
+        const fogValueDisplay = document.createElement('div');
+        fogValueDisplay.textContent = `Fog: ${this.fogDensityFactor}`;
+        
+        // Add event listener
+        fogSlider.addEventListener('input', (event) => {
+            this.fogDensityFactor = parseFloat(event.target.value);
+            fogValueDisplay.textContent = `Fog: ${this.fogDensityFactor.toFixed(1)}`;
+            this.updateFog(); // Update fog with new density
+        });
+        
+        // Add reset button
+        const resetButton = document.createElement('button');
+        resetButton.textContent = 'Reset Fog';
+        resetButton.style.padding = '5px';
+        resetButton.style.cursor = 'pointer';
+        resetButton.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        resetButton.style.color = 'white';
+        resetButton.style.border = '1px solid white';
+        resetButton.addEventListener('click', () => {
+            this.fogDensityFactor = 1.5;
+            fogSlider.value = 1.5;
+            fogValueDisplay.textContent = `Fog: ${this.fogDensityFactor.toFixed(1)}`;
+            this.updateFog();
+        });
+        
+        // Add elements to container
+        fogControlContainer.appendChild(fogSlider);
+        fogControlContainer.appendChild(fogValueDisplay);
+        fogControlContainer.appendChild(resetButton);
+        
+        // Add to document
+        document.body.appendChild(fogControlContainer);
+    }
+    
     toggleLightingMode() {
+        console.log('Toggling lighting mode from', this.lightingMode, 'to', 
+            this.lightingMode === 'sunset' ? 'daytime' : 'sunset');
+        
         // Switch between lighting modes
         this.lightingMode = this.lightingMode === 'sunset' ? 'daytime' : 'sunset';
         
@@ -120,6 +194,9 @@ class SceneManager {
         
         // Update skybox
         this.updateSkybox();
+        
+        // Update fog to match lighting mode
+        this.updateFog();
         
         // Update lake colors
         this.updateLakeColors();
@@ -239,14 +316,30 @@ class SceneManager {
     }
 
     createSkybox() {
-        this.updateSkybox();
+        // Add consistent scale logging
+        console.log('Creating skybox with consistent scale with terrain and fog');
+        const groundSize = 10000; // Consistent scale definition
+        console.log('World scale values:');
+        console.log('- Ground size: ' + groundSize);
+        console.log('- Fog distance: ' + (1/0.00015) + ' units'); // Log fog visibility distance
+        
+        this.updateSkybox(groundSize);
+        
+        // Add fog to create distance haze effect
+        this.updateFog(groundSize);
     }
     
-    updateSkybox() {
+    updateSkybox(groundSize) {
+        // Use consistent groundSize for skybox calculation
+        groundSize = groundSize || 10000; // Default if not provided
+        const skyboxRadius = groundSize * 0.8; // Make skybox proportional to ground size
+        
+        console.log('Updating skybox with radius:', skyboxRadius);
+        
         // Remove existing skybox if it exists
         this.scene.children.forEach(child => {
             if (child.isMesh && child.geometry instanceof THREE.SphereGeometry && 
-                child.geometry.parameters.radius === 4000) {
+                child.geometry.parameters.radius >= groundSize * 0.7) {
                 this.scene.remove(child);
                 if (child.material) {
                     child.material.dispose();
@@ -257,12 +350,22 @@ class SceneManager {
             }
         });
         
+        // Get fog details to apply to skybox
+        const fogColor = this.lightingMode === 'sunset' ? new THREE.Color(0xFF8844) : new THREE.Color(0xCCDDFF);
+        const fogDensity = this.fogDensityFactor / groundSize;
+        
         // Create vertex shader
         const vertexShader = `
             varying vec3 vWorldPosition;
+            varying float vDistance;
             void main() {
                 vec4 worldPosition = modelMatrix * vec4(position, 1.0);
                 vWorldPosition = worldPosition.xyz;
+                
+                // Calculate distance from camera for fog
+                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                vDistance = -mvPosition.z;
+                
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
         `;
@@ -275,18 +378,27 @@ class SceneManager {
                 uniform vec3 topColor;
                 uniform vec3 middleColor;
                 uniform vec3 bottomColor;
+                uniform vec3 fogColor;
+                uniform float fogDensity;
                 uniform float offset;
                 uniform float exponent;
                 varying vec3 vWorldPosition;
+                varying float vDistance;
                 void main() {
                     float h = normalize(vWorldPosition + offset).y;
-                    vec3 color;
+                    vec3 skyColor;
+                    
                     if (h > 0.15) {
-                        color = mix(middleColor, topColor, max(pow((h - 0.15) / 0.85, exponent), 0.0));
+                        skyColor = mix(middleColor, topColor, max(pow((h - 0.15) / 0.85, exponent), 0.0));
                     } else {
-                        color = mix(bottomColor, middleColor, max(pow(h / 0.15, exponent), 0.0));
+                        skyColor = mix(bottomColor, middleColor, max(pow(h / 0.15, exponent), 0.0));
                     }
-                    gl_FragColor = vec4(color, 1.0);
+                    
+                    // Apply fog
+                    float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vDistance * vDistance);
+                    skyColor = mix(skyColor, fogColor, fogFactor);
+                    
+                    gl_FragColor = vec4(skyColor, 1.0);
                 }
             `;
 
@@ -294,6 +406,8 @@ class SceneManager {
                 topColor: { value: new THREE.Color(0x0033AA) },    // Deep blue at zenith
                 middleColor: { value: new THREE.Color(0xFF8844) }, // Orange at horizon
                 bottomColor: { value: new THREE.Color(0xFF5522) }, // Deep orange-red at bottom
+                fogColor: { value: fogColor },
+                fogDensity: { value: fogDensity * 0.8 }, // Slightly less dense for skybox
                 offset: { value: 400 },
                 exponent: { value: 0.4 }
             };
@@ -302,39 +416,75 @@ class SceneManager {
             fragmentShader = `
                 uniform vec3 topColor;
                 uniform vec3 bottomColor;
+                uniform vec3 fogColor;
+                uniform float fogDensity;
                 uniform float offset;
                 uniform float exponent;
                 varying vec3 vWorldPosition;
+                varying float vDistance;
                 void main() {
                     float h = normalize(vWorldPosition + offset).y;
-                    gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+                    vec3 skyColor = mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0));
+                    
+                    // Apply fog
+                    float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vDistance * vDistance);
+                    skyColor = mix(skyColor, fogColor, fogFactor);
+                    
+                    gl_FragColor = vec4(skyColor, 1.0);
                 }
             `;
 
             uniforms = {
                 topColor: { value: new THREE.Color(0x0077FF) },    // Blue at top
                 bottomColor: { value: new THREE.Color(0xAAAAAA) }, // Light gray at horizon
+                fogColor: { value: fogColor },
+                fogDensity: { value: fogDensity * 0.8 }, // Slightly less dense for skybox
                 offset: { value: 400 },
                 exponent: { value: 0.6 }
             };
         }
 
-        const skyGeo = new THREE.SphereGeometry(4000, 32, 15);
+        // Create skybox with consistent scale
+        const skyGeo = new THREE.SphereGeometry(skyboxRadius, 32, 15);
         const skyMat = new THREE.ShaderMaterial({
             uniforms: uniforms,
             vertexShader: vertexShader,
             fragmentShader: fragmentShader,
-            side: THREE.BackSide
+            side: THREE.BackSide,
+            fog: true // Enable fog for the skybox
         });
 
         const sky = new THREE.Mesh(skyGeo, skyMat);
         this.scene.add(sky);
+        console.log('Added skybox with radius:', skyboxRadius, 'and fog density:', fogDensity);
+    }
+
+    updateFog(groundSize) {
+        // Use consistent groundSize for fog calculation
+        groundSize = groundSize || 10000; // Default if not provided
+        const fogDensity = this.fogDensityFactor / groundSize; // Use the fog density factor from the slider
+        
+        console.log('Updating fog with density:', fogDensity, 'factor:', this.fogDensityFactor);
+        
+        // Create fog that matches the skybox colors
+        if (this.lightingMode === 'sunset') {
+            // Sunset fog - warm orange/pink tint
+            this.scene.fog = new THREE.FogExp2(0xFF8844, fogDensity);
+        } else {
+            // Daytime fog - light blue/white tint
+            this.scene.fog = new THREE.FogExp2(0xCCDDFF, fogDensity);
+        }
+        
+        // Update skybox with new fog settings
+        this.updateSkybox(groundSize);
     }
 
     createTerrain() {
+        // Use consistent groundSize across the application
+        const groundSize = 10000;
+        console.log('Creating terrain with ground size:', groundSize);
         console.log('Creating terrain with steep hills and canyons');
         // Create terrain with rolling hills
-        const groundSize = 10000;
         const resolution = 128; // Higher resolution for better detail
         const heightMapSize = resolution;
         
@@ -460,39 +610,8 @@ class SceneManager {
         
         this.scene.add(terrain);
         
-        // Add a simple flat ground plane underneath as a fallback (much lower now)
-        const groundGeometry = new THREE.PlaneGeometry(groundSize * 2, groundSize * 2);
-        const groundMaterial = new THREE.MeshStandardMaterial({
-            color: 0x5D4037,  // Brown color for the ground
-            roughness: 0.9,
-            metalness: 0.0
-        });
-        
-        // Apply the same grass texture to the ground plane
-        groundMaterial.map = grassTexture;
-        groundMaterial.map.repeat.set(groundSize/25, groundSize/25); // Different repeat value for the ground
-        groundMaterial.needsUpdate = true;
-        
-        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-        ground.rotation.x = -Math.PI / 2;
-        ground.position.y = -50; // Much lower below the terrain
-        ground.receiveShadow = true;
-        ground.name = 'ground';
-        
-        this.scene.add(ground);
-        
         // Save the height scale for other methods to use
         this.terrainHeightScale = heightScale;
-        
-        // Add wireframe overlay to make terrain more visible
-        const wireframe = new THREE.WireframeGeometry(terrainGeometry);
-        const lineMaterial = new THREE.LineBasicMaterial({
-            color: 0x000000,
-            opacity: 0.2,
-            transparent: true
-        });
-        const terrainWireframe = new THREE.LineSegments(wireframe, lineMaterial);
-        this.scene.add(terrainWireframe);
         
         // Add lakes, trees and bushes
         this.addLakes();
@@ -847,37 +966,72 @@ class SceneManager {
 
     addMountains() {
         // Add larger mountain ranges
-        const mountainCount = 30; // Doubled from 15 to 30
+        const mountainCount = 90; // Increased from 30 to 90 (3x as many)
         const groundSize = 10000;
         
         for (let i = 0; i < mountainCount; i++) {
-            // Random position near edges of the map for mountains
-            const distance = groundSize * 0.4; // Distance from center
-            const angle = Math.random() * Math.PI * 2;
-            const x = Math.cos(angle) * distance * Math.random();
-            const z = Math.sin(angle) * distance * Math.random();
+            // Random position throughout the map instead of just edges
+            let x = (Math.random() * 2 - 1) * groundSize * 0.45; // Random position across map
+            let z = (Math.random() * 2 - 1) * groundSize * 0.45; // Random position across map
             
             // Create mountain
             const mountainSize = 150 + Math.random() * 350;
-            const mountainHeight = 300 + Math.random() * 700;
+            const mountainHeight = 400 + Math.random() * 800; // Increased height
+            
+            // Add some clustering for more natural mountain ranges
+            const clusterChance = 0.4; // 40% chance of being in a cluster
+            if (i > 0 && Math.random() < clusterChance) {
+                // Choose a random previous mountain to cluster near
+                const previousIndex = Math.floor(Math.random() * i);
+                const previousMountain = this.scene.children.find(child => 
+                    child.isMesh && 
+                    child.geometry instanceof THREE.ConeGeometry && 
+                    child.position.y > 200 &&
+                    child.position.index === previousIndex
+                );
+                
+                if (previousMountain) {
+                    // Position near the previous mountain (200-800 units away)
+                    const clusterDistance = 200 + Math.random() * 600;
+                    const clusterAngle = Math.random() * Math.PI * 2;
+                    x = previousMountain.position.x + Math.cos(clusterAngle) * clusterDistance;
+                    z = previousMountain.position.z + Math.sin(clusterAngle) * clusterDistance;
+                }
+            }
             
             const mountainGeometry = new THREE.ConeGeometry(mountainSize, mountainHeight, 8);
             
-            // Create a gradient texture for the mountain
+            // Create a gradient texture for the mountain with more snow
             const mountainCanvas = document.createElement('canvas');
             mountainCanvas.width = 256;
             mountainCanvas.height = 256;
             const mountainContext = mountainCanvas.getContext('2d');
             
-            // Draw mountain texture gradient
+            // Draw mountain texture gradient with more snow coverage
             const gradient = mountainContext.createLinearGradient(0, 0, 0, 256);
             gradient.addColorStop(0, '#FFFFFF'); // Snow at peak
-            gradient.addColorStop(0.2, '#AAAAAA'); // Rock
-            gradient.addColorStop(0.6, '#776655'); // Rock/dirt
+            gradient.addColorStop(0.4, '#EEEEEE'); // More snow coverage (was 0.2)
+            gradient.addColorStop(0.5, '#AAAAAA'); // Rock transitioning from snow
+            gradient.addColorStop(0.7, '#776655'); // Rock/dirt
             gradient.addColorStop(1, '#5D4037'); // Dirt at base
             
             mountainContext.fillStyle = gradient;
             mountainContext.fillRect(0, 0, 256, 256);
+            
+            // Add some snow texture variation
+            mountainContext.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            for (let j = 0; j < 20; j++) {
+                const snowPatchSize = 5 + Math.random() * 20;
+                mountainContext.beginPath();
+                mountainContext.arc(
+                    Math.random() * 256,
+                    Math.random() * 256 * 0.5, // Only in top half
+                    snowPatchSize,
+                    0,
+                    Math.PI * 2
+                );
+                mountainContext.fill();
+            }
             
             const mountainTexture = new THREE.CanvasTexture(mountainCanvas);
             const mountainMaterial = new THREE.MeshStandardMaterial({
@@ -890,6 +1044,10 @@ class SceneManager {
             mountain.position.set(x, mountainHeight / 2, z);
             mountain.castShadow = true;
             mountain.receiveShadow = true;
+            mountain.position.index = i; // Track index for clustering
+            
+            // Random rotation for more variety
+            mountain.rotation.y = Math.random() * Math.PI * 2;
             
             this.scene.add(mountain);
         }

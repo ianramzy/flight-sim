@@ -5,7 +5,7 @@ class Aircraft {
         this.modelLoaded = false;
         
         // Aircraft properties
-        this.position = new THREE.Vector3(0, 1000, 0);
+        this.position = new THREE.Vector3(0, 500, 0);
         // Use YXZ order for Euler angles to prevent gimbal lock
         this.rotation = new THREE.Euler(0, 0, 0, 'YXZ');
         this.velocity = new THREE.Vector3(0, 0, 0);
