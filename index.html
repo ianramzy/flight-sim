@@ -23,19 +23,7 @@
             border-radius: 5px;
             pointer-events: none;
         }
-        #controls-info {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            color: white;
-            background-color: rgba(0, 0, 0, 0.5);
-            padding: 10px;
-            border-radius: 5px;
-        }
         #view-toggle {
-            position: absolute;
-            top: 20px;
-            left: 20px;
             padding: 5px 10px;
             background-color: rgba(0, 0, 0, 0.5);
             color: white;
@@ -49,17 +37,11 @@
         <div>Altitude: <span id="altitude">0</span> m</div>
         <div>Speed: <span id="speed">0</span> km/h</div>
         <div>Throttle: <span id="throttle">0</span>%</div>
-        <div>FPS: <span id="fps">0</span></div>
     </div>
     
-    <button id="view-toggle">Toggle View</button>
+    <button id="view-toggle" style="display: none;">Toggle View</button>
     
-    <div id="controls-info">
-        <h3>Controls</h3>
-        <div>W/S: Pitch Up/Down</div>
-        <div>A/D: Yaw Left/Right</div>
-        <div>Shift/Ctrl: Increase/Decrease Throttle</div>
-    </div>
+    <!-- Controls info is now in settings panel -->
 
     <!-- Three.js library -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
@@ -68,9 +50,6 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/OBJLoader.js"></script>
-    
-    <!-- Stats.js for performance monitoring -->
-    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
     
     <!-- Our modules -->
     <script type="module" src="js/scene.js"></script>

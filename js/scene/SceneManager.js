@@ -4,7 +4,6 @@ import { TerrainGenerator } from './terrain/TerrainGenerator.js';
 import { MountainGenerator } from './terrain/MountainGenerator.js';
 import { MistSystem } from './atmosphere/MistSystem.js';
 import { UIControls } from './ui/UIControls.js';
-import { PerformanceMonitor } from './performance/PerformanceMonitor.js';
 
 class SceneManager {
     constructor() {
@@ -17,7 +16,6 @@ class SceneManager {
         document.body.appendChild(this.renderer.domElement);
 
         // Initialize subsystems - order matters here!
-        this.performance = new PerformanceMonitor(this);
         this.lighting = new LightingSystem(this.scene);
         this.skybox = new SkyboxManager(this.scene, this.lighting);
         this.terrain = new TerrainGenerator(this.scene);
@@ -40,13 +38,6 @@ class SceneManager {
         
         // Update mist animation
         this.mist.update();
-        
-        // When in performance test mode, disable vsync
-        if (this.performance.isUncapped) {
-            // These settings help break through the vsync/requestAnimationFrame limit
-            this.renderer.setPixelRatio(window.devicePixelRatio || 1);
-            this.renderer.setSize(window.innerWidth, window.innerHeight, false);
-        }
         
         this.renderer.render(this.scene, camera);
     }

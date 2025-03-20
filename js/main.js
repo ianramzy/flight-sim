@@ -35,17 +35,6 @@ class FlightSimulator {
     animate(currentTime = 0) {
         if (!this.running) return;
         
-        // Skip if we're in uncapped performance mode
-        if (this.sceneManager.isUncapped) {
-            requestAnimationFrame((time) => this.animate(time));
-            return;
-        }
-        
-        // Begin stats measurement
-        if (this.sceneManager.stats) {
-            this.sceneManager.stats.begin();
-        }
-        
         // Calculate delta time in seconds
         const deltaTime = (currentTime - this.lastTime) / 1000;
         this.lastTime = currentTime;
@@ -63,11 +52,6 @@ class FlightSimulator {
             
             // Render the scene
             this.sceneManager.render(this.aircraft.getActiveCamera());
-        }
-        
-        // End stats measurement
-        if (this.sceneManager.stats) {
-            this.sceneManager.stats.end();
         }
         
         // Schedule the next frame
