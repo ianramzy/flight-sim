@@ -18,7 +18,7 @@ class Controls {
             this.keys[event.key.toLowerCase()] = true;
             
             // Prevent default action for control keys
-            if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', 'q', 'e', 'shift', 'control'].includes(event.key.toLowerCase())) {
+            if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', 'q', 'e', 'shift', 'control', ' '].includes(event.key.toLowerCase())) {
                 event.preventDefault();
             }
         });
@@ -60,6 +60,11 @@ class Controls {
         if (this.keys['control']) {
             controls.throttle -= 0.014; // Increased from 0.01
             if (controls.throttle < 0) controls.throttle = 0;
+        }
+        
+        // Handle space bar - set throttle to 250%
+        if (this.keys[' ']) {
+            controls.throttle = 2.5; // 250% throttle
         }
         
         // Update aircraft controls
