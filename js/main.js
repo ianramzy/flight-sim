@@ -1,6 +1,7 @@
 import { SceneManager } from './scene/SceneManager.js';
 import { Physics } from './physics.js';
 import { Aircraft } from './aircraft.js';
+import { AIAircraft } from './aiAircraft.js';
 import { Controls } from './controls.js';
 import { UI } from './ui.js';
 
@@ -14,6 +15,20 @@ class FlightSimulator {
         
         // Create aircraft
         this.aircraft = new Aircraft(this.sceneManager.scene);
+        
+        // Create AI aircraft (10 of them with different colors)
+        this.aiAircraft = [
+            new AIAircraft(this.sceneManager.scene, null, 0xFF5252), // Red
+            new AIAircraft(this.sceneManager.scene, null, 0x4CAF50), // Green
+            new AIAircraft(this.sceneManager.scene, null, 0x2196F3), // Blue
+            new AIAircraft(this.sceneManager.scene, null, 0xFFC107), // Amber
+            new AIAircraft(this.sceneManager.scene, null, 0x9C27B0), // Purple
+            new AIAircraft(this.sceneManager.scene, null, 0xFF9800), // Orange
+            new AIAircraft(this.sceneManager.scene, null, 0x795548), // Brown
+            new AIAircraft(this.sceneManager.scene, null, 0x009688), // Teal
+            new AIAircraft(this.sceneManager.scene, null, 0xE91E63), // Pink
+            new AIAircraft(this.sceneManager.scene, null, 0xFFEB3B)  // Yellow
+        ];
         
         // Make aircraft instance globally accessible for performance monitoring
         window.aircraftInstance = this.aircraft;
@@ -44,8 +59,13 @@ class FlightSimulator {
             // Update controls
             this.controls.update();
             
-            // Update aircraft
+            // Update player aircraft
             this.aircraft.update(deltaTime);
+            
+            // Update AI aircraft
+            for (const ai of this.aiAircraft) {
+                ai.update(deltaTime);
+            }
             
             // Update UI
             this.ui.update(this.aircraft, currentTime);
