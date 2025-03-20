@@ -1,0 +1,11 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Transparent background - removed blue background -->
+  <rect width="64" height="64" fill="transparent" rx="8" ry="8" />
+  <!-- First mountain (large) -->
+  <polygon points="8,48 32,16 56,48" fill="#2c3e50" />
+  <!-- Second mountain (small) -->
+  <polygon points="16,48 28,30 40,48" fill="#34495e" />
+  <!-- Snow cap - made larger -->
+  <polygon points="32,16 25,26 39,26" fill="white" />
+</svg>

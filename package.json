@@ -16,9 +16,9 @@
   ],
   "author": "",
   "license": "MIT",
-  "dependencies": {
-  },
   "devDependencies": {
-    "nodemon": "^2.0.22"
+    "nodemon": "^2.0.22",
+    "sharp": "^0.33.5",
+    "svg2png": "^4.1.1"
   }
-} 
+}
