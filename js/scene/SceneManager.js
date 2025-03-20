@@ -4,6 +4,7 @@ import { TerrainGenerator } from './terrain/TerrainGenerator.js';
 import { MountainGenerator } from './terrain/MountainGenerator.js';
 import { MistSystem } from './atmosphere/MistSystem.js';
 import { UIControls } from './ui/UIControls.js';
+import { HotAirBalloon } from './atmosphere/HotAirBalloon.js';
 
 class SceneManager {
     constructor() {
@@ -17,7 +18,7 @@ class SceneManager {
 
         // Loading state tracking
         this.elementsLoaded = 0;
-        this.totalElements = 4; // skybox, terrain, mountains, mist
+        this.totalElements = 5; // skybox, terrain, mountains, mist, balloons
         
         // Loading screen element
         this.loadingScreen = document.getElementById('loading-screen');
@@ -37,12 +38,14 @@ class SceneManager {
         this.terrain = new TerrainGenerator(this.scene);
         this.mountains = new MountainGenerator(this.scene);
         this.mist = new MistSystem(this.scene, this.lighting, this.terrain);
+        this.balloons = new HotAirBalloon(this.scene);
         
         // Now set up callbacks AFTER all systems are initialized
         this.skybox.onLoaded = () => this.onElementLoaded('skybox');
         this.terrain.onLoaded = () => this.onElementLoaded('terrain');
         this.mountains.onLoaded = () => this.onElementLoaded('mountains');
         this.mist.onLoaded = () => this.onElementLoaded('mist');
+        this.balloons.onLoaded = () => this.onElementLoaded('balloons');
         
         // Initialize UI last, after all dependencies are created
         this.ui = new UIControls(this);
@@ -60,6 +63,7 @@ class SceneManager {
             this.checkAndTriggerLoaded('terrain', this.terrain);
             this.checkAndTriggerLoaded('mountains', this.mountains);
             this.checkAndTriggerLoaded('mist', this.mist);
+            this.checkAndTriggerLoaded('balloons', this.balloons);
         }, 100);
     }
     
@@ -127,6 +131,9 @@ class SceneManager {
         
         // Update mist animation
         this.mist.update();
+        
+        // Update balloon animation
+        this.balloons.update();
         
         this.renderer.render(this.scene, camera);
     }
