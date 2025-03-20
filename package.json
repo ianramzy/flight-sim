@@ -1,0 +1,24 @@
+{
+  "name": "threejs-flight-simulator",
+  "version": "1.0.0",
+  "description": "A browser-based flight simulator built with Three.js",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "three.js",
+    "flight",
+    "simulator",
+    "3D",
+    "game"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+} 

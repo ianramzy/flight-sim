@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flight Simulator</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            display: block; 
+        }
+        #ui-container {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+        #controls-info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #view-toggle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 5px 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: 1px solid white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui-container">
+        <div>Altitude: <span id="altitude">0</span> m</div>
+        <div>Speed: <span id="speed">0</span> km/h</div>
+        <div>Throttle: <span id="throttle">0</span>%</div>
+        <div>FPS: <span id="fps">0</span></div>
+    </div>
+    
+    <button id="view-toggle">Toggle View</button>
+    
+    <div id="controls-info">
+        <h3>Controls</h3>
+        <div>W/S: Pitch Up/Down</div>
+        <div>A/D: Yaw Left/Right</div>
+        <div>Q/E: Roll Left/Right</div>
+        <div>Shift/Ctrl: Increase/Decrease Throttle</div>
+    </div>
+
+    <!-- Three.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    
+    <!-- Three.js modules -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/OBJLoader.js"></script>
+    
+    <!-- Our modules -->
+    <script src="js/scene.js"></script>
+    <script src="js/aircraft.js"></script>
+    <script src="js/controls.js"></script>
+    <script src="js/physics.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html> 
