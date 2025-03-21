@@ -261,6 +261,15 @@ class FlightSimulator {
             this.fps = this.frameCount / this.frameTime;
             this.frameCount = 0;
             this.frameTime = 0;
+            
+            // Update the FPS counter display with the new FPS value
+            if (this.fpsCounter) {
+                if (this.fpsCounter.id === 'fps-counter') {
+                    this.fpsCounter.textContent = `FPS: ${Math.round(this.fps)}`;
+                } else {
+                    this.fpsCounter.textContent = Math.round(this.fps);
+                }
+            }
         }
         
         // Skip the first frame (deltaTime would be too large)
