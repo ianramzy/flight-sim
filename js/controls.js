@@ -7,7 +7,7 @@ class Controls {
         
         // Mouse control variables
         this.mouseEnabled = false;
-        this.mouseSensitivity = 0.002; // Adjust as needed
+        this.mouseSensitivity = 0.004; // Doubled from 0.002
         this.mouseX = 0;
         this.mouseY = 0;
         this.mousePitch = 0;
@@ -42,7 +42,7 @@ class Controls {
             }
             
             // Prevent default action for control keys
-            if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', 'q', 'e', 'z', 'x', ' '].includes(event.key.toLowerCase())) {
+            if (['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright', 'z', 'x', ' '].includes(event.key.toLowerCase())) {
                 event.preventDefault();
             }
         });
@@ -67,15 +67,9 @@ class Controls {
             return;
         }
         
-        // Get mouse lock overlay
+        // Get mouse lock overlay - no longer needed, but keep reference to avoid errors
         this.mouseLockOverlay = document.getElementById('mouse-lock-overlay');
         this.mouseControlMessage = document.getElementById('mouse-control-message');
-        
-        // Ensure these elements exist
-        if (!this.mouseLockOverlay || !this.mouseControlMessage) {
-            console.error('Mouse control UI elements not found');
-            return;
-        }
         
         // Setup pointer lock event listeners
         document.addEventListener('pointerlockchange', this.handlePointerLockChange.bind(this));
@@ -84,20 +78,18 @@ class Controls {
         // Mouse movement for pitch and yaw
         document.addEventListener('mousemove', this.handleMouseMove.bind(this));
         
-        // Click to enable mouse controls - only if mouse control is enabled in settings
-        this.canvas.addEventListener('click', () => {
-            if (window.mouseControlEnabled) {
+        // Enable mouse controls automatically when game starts
+        window.addEventListener('load', () => {
+            // Small delay to ensure all elements are loaded
+            setTimeout(() => {
                 this.enableMouseControls();
-            }
-        });
-        this.mouseLockOverlay.addEventListener('click', () => {
-            if (window.mouseControlEnabled) {
-                this.enableMouseControls();
-            }
+            }, 1000);
         });
         
-        // Do not show mouse overlay initially - we'll wait for settings to enable it
-        this.mouseLockOverlay.classList.remove('active');
+        // Also enable on canvas click as fallback
+        this.canvas.addEventListener('click', () => {
+            this.enableMouseControls();
+        });
     }
     
     handlePointerLockChange() {
@@ -106,17 +98,36 @@ class Controls {
         
         if (this.mouseEnabled) {
             // Mouse is locked
-            this.mouseLockOverlay.classList.remove('active');
-            this.mouseControlMessage.classList.add('visible');
+            if (this.mouseLockOverlay) {
+                this.mouseLockOverlay.classList.remove('active');
+            }
+            if (this.mouseControlMessage) {
+                this.mouseControlMessage.classList.add('visible');
+                
+                // Hide the message after 3 seconds
+                setTimeout(() => {
+                    this.mouseControlMessage.classList.remove('visible');
+                }, 3000);
+            }
             
-            // Hide the message after 3 seconds
-            setTimeout(() => {
-                this.mouseControlMessage.classList.remove('visible');
-            }, 3000);
+            // Close settings panel if open
+            const settingsPanel = document.getElementById('settings-panel');
+            if (settingsPanel && settingsPanel.style.display === 'flex') {
+                settingsPanel.style.display = 'none';
+                // Update the settings toggle state in UIControls if available
+                if (window.simulatorInstance && window.simulatorInstance.ui && 
+                    window.simulatorInstance.ui.uiControls) {
+                    window.simulatorInstance.ui.uiControls.settingsOpen = false;
+                }
+            }
         } else {
             // Mouse lock is disabled
-            this.mouseLockOverlay.classList.add('active');
-            this.mouseControlMessage.classList.remove('visible');
+            if (this.mouseLockOverlay) {
+                this.mouseLockOverlay.classList.add('active');
+            }
+            if (this.mouseControlMessage) {
+                this.mouseControlMessage.classList.remove('visible');
+            }
             
             // Reset mouse control values
             this.mousePitch = 0;
@@ -127,7 +138,9 @@ class Controls {
     handlePointerLockError() {
         console.error('Error getting pointer lock');
         this.mouseEnabled = false;
-        this.mouseLockOverlay.classList.add('active');
+        if (this.mouseLockOverlay) {
+            this.mouseLockOverlay.classList.add('active');
+        }
     }
     
     handleMouseMove(event) {
@@ -196,9 +209,7 @@ class Controls {
             controls.yaw += this.mouseYaw * 15; // Increased 3x from 5 to 15
         }
         
-        // Handle roll (Q/E)
-        if (this.keys['q']) controls.roll = -1 * gainFactor;
-        if (this.keys['e']) controls.roll = 1 * gainFactor;
+        // Roll controls removed (Q/E no longer control roll)
         
         // Handle throttle (X/Z) - X increases, Z decreases (swapped from previous Z/X)
         if (this.keys['x']) {

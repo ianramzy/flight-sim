@@ -3,6 +3,7 @@ import { SkyboxManager } from './atmosphere/SkyboxManager.js';
 import { TerrainGenerator } from './terrain/TerrainGenerator.js';
 import { MountainGenerator } from './terrain/MountainGenerator.js';
 import { MistSystem } from './atmosphere/MistSystem.js';
+import { CloudSystem } from './atmosphere/CloudSystem.js';
 import { UIControls } from './ui/UIControls.js';
 import { HotAirBalloon } from './atmosphere/HotAirBalloon.js';
 
@@ -18,7 +19,7 @@ class SceneManager {
 
         // Loading state tracking
         this.elementsLoaded = 0;
-        this.totalElements = 5; // skybox, terrain, mountains, mist, balloons
+        this.totalElements = 6; // skybox, terrain, mountains, mist, clouds, balloons
         
         // Loading screen element
         this.loadingScreen = document.getElementById('loading-screen');
@@ -38,6 +39,7 @@ class SceneManager {
         this.terrain = new TerrainGenerator(this.scene);
         this.mountains = new MountainGenerator(this.scene);
         this.mist = new MistSystem(this.scene, this.lighting, this.terrain);
+        this.clouds = new CloudSystem(this.scene, this.lighting);
         this.balloons = new HotAirBalloon(this.scene);
         
         // Now set up callbacks AFTER all systems are initialized
@@ -45,6 +47,7 @@ class SceneManager {
         this.terrain.onLoaded = () => this.onElementLoaded('terrain');
         this.mountains.onLoaded = () => this.onElementLoaded('mountains');
         this.mist.onLoaded = () => this.onElementLoaded('mist');
+        this.clouds.onLoaded = () => this.onElementLoaded('clouds');
         this.balloons.onLoaded = () => this.onElementLoaded('balloons');
         
         // Initialize UI last, after all dependencies are created
@@ -63,6 +66,7 @@ class SceneManager {
             this.checkAndTriggerLoaded('terrain', this.terrain);
             this.checkAndTriggerLoaded('mountains', this.mountains);
             this.checkAndTriggerLoaded('mist', this.mist);
+            this.checkAndTriggerLoaded('clouds', this.clouds);
             this.checkAndTriggerLoaded('balloons', this.balloons);
         }, 100);
     }
@@ -131,6 +135,9 @@ class SceneManager {
         
         // Update mist animation
         this.mist.update();
+        
+        // Update cloud animation
+        this.clouds.update();
         
         // Update balloon animation
         this.balloons.update();

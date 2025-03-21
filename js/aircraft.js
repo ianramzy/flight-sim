@@ -15,6 +15,7 @@ class Aircraft {
         this.controls = {
             pitch: 0,
             yaw: 0,
+            roll: 0,
             throttle: 1.0
         };
         
@@ -23,11 +24,12 @@ class Aircraft {
         this.minSpeed = 50;
         this.throttleAcceleration = 320;
         this.dragFactor = 0.0008;
-        this.liftFactor = 0.0001;
+        this.liftFactor = 0.000;
         this.weight = 20;
         this.rotationSensitivity = {
             pitch: 1.0,
-            yaw: 1.0
+            yaw: 1.0,
+            roll: 1.0
         };
         
         // Debug logging
@@ -37,8 +39,14 @@ class Aircraft {
         // Camera setup
         this.setupCameras();
         
-        // Load aircraft model
-        this.loadModel();
+        // Only call loadModel if we're not in a subclass that overrides it
+        // This prevents issues with calling overridden methods before initialization
+        const aircraftProto = Object.getPrototypeOf(this);
+        const baseProto = Aircraft.prototype;
+        if (aircraftProto.loadModel === baseProto.loadModel) {
+            // Only call if we're using the base implementation
+            this.loadModel();
+        }
         
         // Shooting mechanics
         this.projectiles = [];
@@ -51,7 +59,7 @@ class Aircraft {
         this.thirdPersonCamera = new THREE.PerspectiveCamera(
             75, window.innerWidth / window.innerHeight, 0.1, 40000
         );
-        this.thirdPersonCamera.position.set(0, 10, -30);
+        this.thirdPersonCamera.position.set(0, 10, -30000);
         
         // Setup first-person (cockpit) camera
         this.firstPersonCamera = new THREE.PerspectiveCamera(
@@ -125,6 +133,26 @@ class Aircraft {
         const wings = new THREE.Mesh(wingGeometry, wingMaterial);
         wings.position.set(0, 0, 0);
         this.wingsGroup.add(wings);
+        
+        // Add wing flaps (ailerons) for pitch control
+        const flapColor = new THREE.Color(0x2A5DB0); // Slightly darker blue than wings
+        const flapMaterial = new THREE.MeshStandardMaterial({
+            color: flapColor,
+            metalness: 0.7,
+            roughness: 0.3
+        });
+        
+        // Left flap
+        const leftFlapGeometry = new THREE.BoxGeometry(6, 0.3, 1);
+        this.leftFlap = new THREE.Mesh(leftFlapGeometry, flapMaterial);
+        this.leftFlap.position.set(-8, 0, -1.5);
+        this.wingsGroup.add(this.leftFlap);
+        
+        // Right flap
+        const rightFlapGeometry = new THREE.BoxGeometry(6, 0.3, 1);
+        this.rightFlap = new THREE.Mesh(rightFlapGeometry, flapMaterial);
+        this.rightFlap.position.set(8, 0, -1.5);
+        this.wingsGroup.add(this.rightFlap);
         
         // Add wingtips - vertical stabilizers at the ends of wings
         const wingtipGeometry = new THREE.BoxGeometry(0.5, 1.2, 2);
@@ -207,6 +235,27 @@ class Aircraft {
         const stabilizer = new THREE.Mesh(stabilizerGeometry, stabilizerMaterial);
         stabilizer.position.set(0, 1.7, -5);
         this.model.add(stabilizer);
+        
+        // Add rudder for yaw control
+        const rudderGeometry = new THREE.BoxGeometry(0.3, 2, 1.5);
+        // Taper the rudder for aerodynamic shape
+        const rudderPositions = rudderGeometry.attributes.position;
+        for (let i = 0; i < rudderPositions.count; i++) {
+            const z = rudderPositions.getZ(i);
+            // More taper at the top
+            if (z < 0) {
+                const factor = 1 + z * 0.15;
+                rudderPositions.setY(i, rudderPositions.getY(i) * factor);
+            }
+        }
+        const rudderMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xE06666, // Red accent to match stabilizer
+            metalness: 0.7,
+            roughness: 0.3
+        });
+        this.rudder = new THREE.Mesh(rudderGeometry, rudderMaterial);
+        this.rudder.position.set(0, 1.7, -6.5); // Position at the back of vertical stabilizer
+        this.model.add(this.rudder);
         
         // Add horizontal stabilizers
         const hStabilizerGeometry = new THREE.BoxGeometry(7, 0.2, 2);
@@ -349,7 +398,7 @@ class Aircraft {
             direction: direction,
             speed: 1200, // Doubled again from 600 to 1200 meters per second
             distance: 0,
-            maxDistance: 2000, // Doubled from 1000 to 2000 meters
+            maxDistance: 4000, // Doubled from 2000 to 4000 meters
             createdAt: currentTime
         };
         
@@ -363,6 +412,9 @@ class Aircraft {
         for (let i = 0; i < this.projectiles.length; i++) {
             const projectile = this.projectiles[i];
             
+            // Get the old position before movement
+            const oldPosition = projectile.mesh.position.clone();
+            
             // Update position
             const distanceThisFrame = projectile.speed * deltaTime;
             projectile.distance += distanceThisFrame;
@@ -370,13 +422,133 @@ class Aircraft {
             const movement = projectile.direction.clone().multiplyScalar(distanceThisFrame);
             projectile.mesh.position.add(movement);
             
+            // Get terrain height at this position
+            let terrainHeight = 0; // Default ground level
+            let hitMountain = false;
+            let hitPosition = new THREE.Vector3();
+            
+            try {
+                // Check if we have access to terrain height data through simulator
+                if (window.simulatorInstance && window.simulatorInstance.sceneManager) {
+                    // First check for the terrain
+                    const terrain = window.simulatorInstance.sceneManager.terrain;
+                    if (terrain && typeof terrain.getHeightAt === 'function') {
+                        terrainHeight = terrain.getHeightAt(
+                            projectile.mesh.position.x, 
+                            projectile.mesh.position.z
+                        );
+                    }
+                    
+                    // Direct mountain collision check
+                    const mountains = window.simulatorInstance.sceneManager.scene.children.filter(
+                        child => child.isMesh && child.userData && child.userData.isMountain
+                    );
+                    
+                    if (mountains && mountains.length) {
+                        // Line segment for bullet path this frame
+                        const rayStart = oldPosition;
+                        const rayEnd = projectile.mesh.position;
+                        const rayDir = new THREE.Vector3().subVectors(rayEnd, rayStart).normalize();
+                        const rayLength = rayStart.distanceTo(rayEnd);
+                        
+                        // Use Three.js Raycaster for more accurate detection
+                        const raycaster = new THREE.Raycaster(rayStart, rayDir, 0, rayLength);
+                        const intersects = raycaster.intersectObjects(mountains, false);
+                        
+                        if (intersects.length > 0) {
+                            // We hit a mountain directly
+                            hitMountain = true;
+                            hitPosition.copy(intersects[0].point);
+                        } else {
+                            // Fallback to approximate mountain height check if raycaster didn't detect
+                            for (const mountain of mountains) {
+                                if (!mountain || !mountain.position) continue;
+                                
+                                const dx = projectile.mesh.position.x - mountain.position.x;
+                                const dz = projectile.mesh.position.z - mountain.position.z;
+                                const distanceSquared = dx * dx + dz * dz;
+                                
+                                // Mountain radius and height parameters
+                                const mountainRadius = 150;
+                                const mountainHeight = 300;
+                                
+                                // Improved mountain collision model - smoother cone shape
+                                if (distanceSquared < mountainRadius * mountainRadius) {
+                                    const distance = Math.sqrt(distanceSquared);
+                                    const radiusRatio = distance / mountainRadius;
+                                    
+                                    // Mountains are higher in the center and taper off towards the edges
+                                    // Using a quadratic falloff for more realistic shape
+                                    const mountainHeightAtPoint = mountainHeight * (1 - radiusRatio * radiusRatio);
+                                    
+                                    // Add mountain height to the local terrain height
+                                    const totalHeight = mountain.position.y + mountainHeightAtPoint;
+                                    
+                                    // Check if bullet is below mountain height at this position
+                                    if (oldPosition.y > totalHeight && projectile.mesh.position.y <= totalHeight) {
+                                        hitMountain = true;
+                                        
+                                        // Calculate approximate hit position
+                                        const t = (totalHeight - oldPosition.y) / (projectile.mesh.position.y - oldPosition.y);
+                                        hitPosition.x = oldPosition.x + t * (projectile.mesh.position.x - oldPosition.x);
+                                        hitPosition.y = totalHeight;
+                                        hitPosition.z = oldPosition.z + t * (projectile.mesh.position.z - oldPosition.z);
+                                        break;
+                                    }
+                                    
+                                    // Update terrain height if mountain is higher
+                                    terrainHeight = Math.max(terrainHeight, totalHeight);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn("Error checking terrain collision:", error);
+            }
+            
+            // Check if we hit a mountain directly
+            if (hitMountain) {
+                // Create impact effect at hit position
+                if (window.simulatorInstance && window.simulatorInstance.effects) {
+                    window.simulatorInstance.effects.createHitEffect(hitPosition, false);
+                }
+                
+                projectilesToRemove.push(i);
+                continue; // Skip further checks
+            }
+            
+            // Check if bullet crossed below terrain level this frame
+            // Compare line segment from old position to new position against terrain height
+            const oldY = oldPosition.y;
+            const newY = projectile.mesh.position.y;
+            
+            if (oldY > terrainHeight && newY <= terrainHeight) {
+                // Calculate the exact impact position (at terrain level)
+                const impactPosition = projectile.mesh.position.clone();
+                // Interpolate to get the exact terrain intersection point
+                const t = (terrainHeight - oldY) / (newY - oldY);
+                impactPosition.x = oldPosition.x + t * (projectile.mesh.position.x - oldPosition.x);
+                impactPosition.z = oldPosition.z + t * (projectile.mesh.position.z - oldPosition.z);
+                impactPosition.y = terrainHeight;
+                
+                // Create impact effect (terrain explosion)
+                if (window.simulatorInstance && window.simulatorInstance.effects) {
+                    // Use isAircraft=false for a smaller explosion effect for terrain
+                    window.simulatorInstance.effects.createHitEffect(impactPosition, false);
+                }
+                
+                projectilesToRemove.push(i);
+                continue; // Skip the max distance check for this projectile
+            }
+            
             // Check if projectile should be removed (traveled max distance)
             if (projectile.distance >= projectile.maxDistance) {
                 projectilesToRemove.push(i);
             }
         }
         
-        // Remove projectiles that are out of range
+        // Remove projectiles that are out of range or hit terrain
         for (let i = projectilesToRemove.length - 1; i >= 0; i--) {
             const index = projectilesToRemove[i];
             const projectile = this.projectiles[index];
@@ -406,6 +578,25 @@ class Aircraft {
             const targetPitchFlex = this.controls.pitch * 0.05; // Slight flex of wings during pitch
             const currentPitchFlex = this.wingsGroup.rotation.x;
             this.wingsGroup.rotation.x = THREE.MathUtils.lerp(currentPitchFlex, targetPitchFlex, 0.1);
+        }
+        
+        // Update control surfaces animations
+        if (this.leftFlap && this.rightFlap) {
+            // Wing flaps move in the same direction for pitch control
+            // Positive pitch (nose down) -> flaps move up
+            // Negative pitch (nose up) -> flaps move down
+            const flapAngle = -this.controls.pitch * 0.5; // Up to 0.5 radians (~28 degrees) of movement
+            this.leftFlap.rotation.x = flapAngle;
+            this.rightFlap.rotation.x = flapAngle;
+        }
+        
+        if (this.rudder) {
+            // Rudder moves with yaw control
+            // Positive yaw (turn left) -> rudder turns right
+            // Negative yaw (turn right) -> rudder turns left
+            const targetRudderAngle = -this.controls.yaw * 0.5; // Up to 0.5 radians of movement
+            const currentRudderAngle = this.rudder.rotation.y;
+            this.rudder.rotation.y = THREE.MathUtils.lerp(currentRudderAngle, targetRudderAngle, 0.1);
         }
         
         // Calculate forces
@@ -500,14 +691,14 @@ class Aircraft {
     updateCameras() {
         if (!this.modelLoaded) return;
         
-        // Calculate the camera offset based on aircraft rotation
+            // Calculate the camera offset based on aircraft rotation
         const thirdPersonOffset = new THREE.Vector3(0, 10, -30);
-        thirdPersonOffset.applyEuler(this.rotation);
-        
-        // Position third-person camera behind the aircraft
-        this.thirdPersonCamera.position.copy(this.position).add(thirdPersonOffset);
+            thirdPersonOffset.applyEuler(this.rotation);
+            
+            // Position third-person camera behind the aircraft
+            this.thirdPersonCamera.position.copy(this.position).add(thirdPersonOffset);
         this.thirdPersonCamera.lookAt(this.position);
-        
+            
         // Add some lag and smoothing to the camera for more natural following
         const lookAtPos = this.position.clone();
         const forwardDir = new THREE.Vector3(0, 0, 20);
@@ -516,10 +707,10 @@ class Aircraft {
         this.thirdPersonCamera.lookAt(lookAtPos);
         
         // Update first-person camera
-        const firstPersonOffset = new THREE.Vector3(0, 3, 0);
-        firstPersonOffset.applyEuler(this.rotation);
-        this.firstPersonCamera.position.copy(this.position).add(firstPersonOffset);
-        
+            const firstPersonOffset = new THREE.Vector3(0, 3, 0);
+            firstPersonOffset.applyEuler(this.rotation);
+            this.firstPersonCamera.position.copy(this.position).add(firstPersonOffset);
+            
         // Make first-person camera look in the direction of travel
         const target = this.position.clone();
         const fpForwardDir = new THREE.Vector3(0, 0, 10);

@@ -30,6 +30,29 @@
             border-radius: 5px;
             pointer-events: none;
         }
+        
+        #info-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            min-width: 150px;
+        }
+        
+        .info-label {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .info-value {
+            min-width: 30px;
+            text-align: right;
+        }
+        
         #view-toggle {
             padding: 5px 10px;
             background-color: rgba(0, 0, 0, 0.5);
@@ -135,23 +158,18 @@
         <h2>Mouse Control Active</h2>
         <p>Move your mouse to control the aircraft.</p>
         <p>Press ESC to release mouse control.</p>
-        <p>Click anywhere to re-enable mouse control.</p>
     </div>
     
-    <!-- Mouse lock overlay - appears when mouse lock is released -->
-    <div id="mouse-lock-overlay">
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center;">
-            <h3>Mouse Control Disabled</h3>
-            <p>Click anywhere to re-enable mouse control</p>
-        </div>
-    </div>
+    <!-- Removing the mouse lock overlay that shows "Click to Enable Mouse Control" -->
 
     <div id="ui-container">
-        <div>Altitude: <span id="altitude">0</span> m</div>
-        <div>Speed: <span id="speed">0</span> km/h</div>
-        <div>Throttle: <span id="throttle">0</span>%</div>
-        <div>AI Aircraft: <span id="ai-count">100</span></div>
-        <div>Score: <span id="score">0</span></div>
+        <div id="info-panel">
+            <div class="info-item"><span class="info-label">Altitude:</span> <span id="altitude" class="info-value">0</span> m</div>
+            <div class="info-item"><span class="info-label">Speed:</span> <span id="speed" class="info-value">0</span> km/h</div>
+            <div class="info-item"><span class="info-label">Throttle:</span> <span id="throttle" class="info-value">0</span>%</div>
+            <div class="info-item"><span class="info-label">AI Aircraft:</span> <span id="ai-count" class="info-value">100</span></div>
+            <div class="info-item"><span class="info-label">Score:</span> <span id="score" class="info-value">0</span></div>
+        </div>
     </div>
     
     <button id="view-toggle" style="display: none;">Toggle View</button>

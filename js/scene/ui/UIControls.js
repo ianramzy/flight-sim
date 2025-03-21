@@ -62,6 +62,7 @@ class UIControls {
         const lightingSection = this.createControlSection('Lighting');
         const fogSection = this.createControlSection('Fog Controls');
         const mistSection = this.createControlSection('Mist Controls');
+        const cloudSection = this.createControlSection('Cloud Controls');
         
         // Add sections to panel
         settingsPanel.appendChild(controlsSection);
@@ -69,6 +70,7 @@ class UIControls {
         settingsPanel.appendChild(lightingSection);
         settingsPanel.appendChild(fogSection);
         settingsPanel.appendChild(mistSection);
+        settingsPanel.appendChild(cloudSection);
         
         // Store references to sections for later use
         this.controlsSection = controlsSection;
@@ -76,6 +78,7 @@ class UIControls {
         this.lightingSection = lightingSection;
         this.fogSection = fogSection;
         this.mistSection = mistSection;
+        this.cloudSection = cloudSection;
         
         // Add lighting toggle
         this.createLightingToggle(lightingSection);
@@ -85,6 +88,9 @@ class UIControls {
         
         // Add mist controls
         this.createMistControls(mistSection);
+        
+        // Add cloud controls
+        this.createCloudControls(cloudSection);
         
         // Toggle settings panel
         settingsButton.addEventListener('click', () => {
@@ -131,28 +137,44 @@ class UIControls {
             // Add to our view section
             this.viewSection.appendChild(viewToggle);
         }
+        
+        // Add event listener to close settings when mouse lock overlay is clicked
+        const mouseLockOverlay = document.getElementById('mouse-lock-overlay');
+        if (mouseLockOverlay) {
+            mouseLockOverlay.addEventListener('click', () => {
+                if (this.settingsOpen) {
+                    this.settingsOpen = false;
+                    const settingsPanel = document.getElementById('settings-panel');
+                    if (settingsPanel) {
+                        settingsPanel.style.display = 'none';
+                    }
+                }
+            });
+        }
     }
     
     moveControlsInfoToSettings() {
-        // Create comprehensive controls list
+        // Create controls info panel
         const controlsDiv = document.createElement('div');
+        controlsDiv.style.padding = '10px';
+        controlsDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.2)';
+        controlsDiv.style.borderRadius = '5px';
         
-        // Add title
-        const title = document.createElement('h3');
+        // Add section title
+        const title = document.createElement('h4');
         title.textContent = 'Controls';
         title.style.margin = '0 0 10px 0';
+        title.style.borderBottom = '1px solid rgba(255, 255, 255, 0.3)';
+        title.style.paddingBottom = '5px';
         controlsDiv.appendChild(title);
         
         // Create list of controls
         const controlsList = [
             { key: 'W / S', action: 'Pitch Down / Up' },
             { key: 'A / D', action: 'Yaw Left / Right' },
-            { key: 'Q / E', action: 'Roll Left / Right' },
             { key: 'X / Z', action: 'Increase / Decrease Throttle' },
             { key: 'Space', action: 'Fire Weapon' },
-            { key: 'Mouse', action: 'Control Pitch and Yaw' },
-            { key: 'Escape', action: 'Release Mouse Control' },
-            { key: 'Click', action: 'Enable Mouse Control' }
+            { key: 'Escape', action: 'Release Mouse Control' }
         ];
         
         // Add each control to the div
@@ -209,62 +231,13 @@ class UIControls {
         pitchInversionDiv.appendChild(pitchInversionCheckbox);
         controlsDiv.appendChild(pitchInversionDiv);
         
-        // Add mouse control toggle
-        const mouseControlDiv = document.createElement('div');
-        mouseControlDiv.style.marginTop = '15px';
-        mouseControlDiv.style.padding = '5px';
-        mouseControlDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
-        mouseControlDiv.style.borderRadius = '5px';
-        
-        const mouseControlLabel = document.createElement('label');
-        mouseControlLabel.textContent = 'Enable Mouse Control: ';
-        mouseControlLabel.style.marginRight = '10px';
-        
-        const mouseControlCheckbox = document.createElement('input');
-        mouseControlCheckbox.type = 'checkbox';
-        mouseControlCheckbox.id = 'enable-mouse';
-        
-        // Initialize the checkbox state from localStorage if available
-        const mouseControlEnabledStored = localStorage.getItem('mouseControlEnabled');
-        const mouseControlEnabled = mouseControlEnabledStored ? mouseControlEnabledStored === 'true' : false;
-        mouseControlCheckbox.checked = mouseControlEnabled;
-        
-        // Set the global setting
-        window.mouseControlEnabled = mouseControlEnabled;
-        
-        // Add event listener to the checkbox
-        mouseControlCheckbox.addEventListener('change', (event) => {
-            const isEnabled = event.target.checked;
-            window.mouseControlEnabled = isEnabled;
-            localStorage.setItem('mouseControlEnabled', isEnabled);
-            
-            // Show or hide the mouse overlay based on setting
-            const overlay = document.getElementById('mouse-lock-overlay');
-            if (overlay) {
-                if (isEnabled) {
-                    overlay.classList.add('active'); // Show overlay to prompt for click
-                } else {
-                    overlay.classList.remove('active'); // Hide overlay
-                    
-                    // If mouse is currently locked, release it
-                    if (document.pointerLockElement) {
-                        document.exitPointerLock();
-                    }
-                }
-            }
-        });
-        
-        mouseControlDiv.appendChild(mouseControlLabel);
-        mouseControlDiv.appendChild(mouseControlCheckbox);
-        controlsDiv.appendChild(mouseControlDiv);
-        
         // Remove the original controls info element if it exists
         const controlsInfo = document.getElementById('controls-info');
         if (controlsInfo) {
             controlsInfo.remove();
         }
         
-        // Add the controls content to our controls section
+        // Add the controls div to the settings panel
         this.controlsSection.appendChild(controlsDiv);
     }
     
@@ -381,6 +354,136 @@ class UIControls {
         container.appendChild(mistSlider);
         container.appendChild(mistValueDisplay);
         container.appendChild(toggleMistButton);
+    }
+    
+    createCloudControls(container) {
+        const cloudControlsWrap = document.createElement('div');
+        cloudControlsWrap.style.marginBottom = '10px';
+        
+        // Create cloud toggle
+        const cloudToggle = document.createElement('div');
+        cloudToggle.style.display = 'flex';
+        cloudToggle.style.alignItems = 'center';
+        cloudToggle.style.marginBottom = '5px';
+        
+        const cloudCheckbox = document.createElement('input');
+        cloudCheckbox.type = 'checkbox';
+        cloudCheckbox.id = 'cloud-toggle';
+        cloudCheckbox.checked = this.sceneManager.clouds.getCloudEnabled();
+        cloudCheckbox.style.marginRight = '5px';
+        
+        const cloudLabel = document.createElement('label');
+        cloudLabel.htmlFor = 'cloud-toggle';
+        cloudLabel.textContent = 'Show Clouds';
+        cloudLabel.style.userSelect = 'none';
+        
+        cloudToggle.appendChild(cloudCheckbox);
+        cloudToggle.appendChild(cloudLabel);
+        cloudControlsWrap.appendChild(cloudToggle);
+        
+        cloudCheckbox.addEventListener('change', () => {
+            this.sceneManager.clouds.setCloudEnabled(cloudCheckbox.checked);
+        });
+        
+        // Create cloud density slider
+        const densityWrap = document.createElement('div');
+        densityWrap.style.marginBottom = '10px';
+        
+        const densityLabel = document.createElement('label');
+        densityLabel.textContent = 'Cloud Density: ';
+        densityLabel.htmlFor = 'cloud-density';
+        densityLabel.style.userSelect = 'none';
+        
+        const densityValue = document.createElement('span');
+        densityValue.textContent = this.sceneManager.clouds.getCloudDensity().toFixed(1);
+        
+        densityLabel.appendChild(densityValue);
+        densityWrap.appendChild(densityLabel);
+        
+        const densitySlider = document.createElement('input');
+        densitySlider.type = 'range';
+        densitySlider.id = 'cloud-density';
+        densitySlider.min = '0.1';
+        densitySlider.max = '1.0';
+        densitySlider.step = '0.1';
+        densitySlider.value = this.sceneManager.clouds.getCloudDensity();
+        densitySlider.style.width = '100%';
+        
+        densityWrap.appendChild(densitySlider);
+        cloudControlsWrap.appendChild(densityWrap);
+        
+        densitySlider.addEventListener('input', () => {
+            const value = parseFloat(densitySlider.value);
+            densityValue.textContent = value.toFixed(1);
+            this.sceneManager.clouds.setCloudDensity(value);
+        });
+        
+        // Create cloud coverage slider
+        const coverageWrap = document.createElement('div');
+        coverageWrap.style.marginBottom = '10px';
+        
+        const coverageLabel = document.createElement('label');
+        coverageLabel.textContent = 'Cloud Coverage: ';
+        coverageLabel.htmlFor = 'cloud-coverage';
+        coverageLabel.style.userSelect = 'none';
+        
+        const coverageValue = document.createElement('span');
+        coverageValue.textContent = this.sceneManager.clouds.getCloudCoverage().toFixed(1);
+        
+        coverageLabel.appendChild(coverageValue);
+        coverageWrap.appendChild(coverageLabel);
+        
+        const coverageSlider = document.createElement('input');
+        coverageSlider.type = 'range';
+        coverageSlider.id = 'cloud-coverage';
+        coverageSlider.min = '0.1';
+        coverageSlider.max = '1.0';
+        coverageSlider.step = '0.1';
+        coverageSlider.value = this.sceneManager.clouds.getCloudCoverage();
+        coverageSlider.style.width = '100%';
+        
+        coverageWrap.appendChild(coverageSlider);
+        cloudControlsWrap.appendChild(coverageWrap);
+        
+        coverageSlider.addEventListener('input', () => {
+            const value = parseFloat(coverageSlider.value);
+            coverageValue.textContent = value.toFixed(1);
+            this.sceneManager.clouds.setCloudCoverage(value);
+        });
+        
+        // Create cloud height slider
+        const heightWrap = document.createElement('div');
+        
+        const heightLabel = document.createElement('label');
+        heightLabel.textContent = 'Cloud Height: ';
+        heightLabel.htmlFor = 'cloud-height';
+        heightLabel.style.userSelect = 'none';
+        
+        const heightValue = document.createElement('span');
+        heightValue.textContent = (this.sceneManager.clouds.getCloudHeight() / 1000).toFixed(1) + 'k';
+        
+        heightLabel.appendChild(heightValue);
+        heightWrap.appendChild(heightLabel);
+        
+        const heightSlider = document.createElement('input');
+        heightSlider.type = 'range';
+        heightSlider.id = 'cloud-height';
+        heightSlider.min = '2000';
+        heightSlider.max = '10000';
+        heightSlider.step = '500';
+        heightSlider.value = this.sceneManager.clouds.getCloudHeight();
+        heightSlider.style.width = '100%';
+        
+        heightWrap.appendChild(heightSlider);
+        cloudControlsWrap.appendChild(heightWrap);
+        
+        heightSlider.addEventListener('input', () => {
+            const value = parseInt(heightSlider.value);
+            heightValue.textContent = (value / 1000).toFixed(1) + 'k';
+            this.sceneManager.clouds.setCloudHeight(value);
+        });
+        
+        container.appendChild(cloudControlsWrap);
     }
 }
 

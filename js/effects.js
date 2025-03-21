@@ -66,8 +66,9 @@ class EffectsSystem {
     
     createHitEffect(position, isAircraft, objectVelocity = null) {
         // Create particle system for impact
-        // For aircraft, double the particle count (120 particles for aircraft explosions)
-        const particleCount = isAircraft ? 120 : 30; // 2x larger for aircraft
+        // For aircraft/terrain, increase particle count
+        const isTerrain = position.y <= 0.5 && !isAircraft; // Detect if this is a terrain hit (low height and not aircraft)
+        const particleCount = isTerrain ? 50 : (isAircraft ? 120 : 30); // Reduced particles for terrain
         const particleGeometry = new THREE.BufferGeometry();
         const particlePositions = new Float32Array(particleCount * 3);
         const particleSizes = new Float32Array(particleCount);
@@ -75,26 +76,32 @@ class EffectsSystem {
         const particleVelocities = [];
         
         // Different colors based on target type
-        const baseColor = isAircraft ? 
-            new THREE.Color(0xff5500) : // Orange/red for aircraft
-            new THREE.Color(0xffcc00);  // Yellow for balloons
+        let baseColor;
+        if (isTerrain) {
+            baseColor = new THREE.Color(0xaaaaaa); // Gray dust for terrain
+        } else if (isAircraft) {
+            baseColor = new THREE.Color(0xff5500); // Orange/red for aircraft
+        } else {
+            baseColor = new THREE.Color(0xffcc00); // Yellow for balloons
+        }
         
         // Create particles
         for (let i = 0; i < particleCount; i++) {
             // Initial position at impact point with slight random offset
-            // For aircraft, increase spread radius for larger explosion
-            const spreadRadius = isAircraft ? 6 : 3; // 2x larger spread for aircraft
+            // For terrain, create wider but smaller spread for dust cloud effect
+            const spreadRadius = isTerrain ? 4 : (isAircraft ? 6 : 3);
             particlePositions[i * 3] = position.x + (Math.random() - 0.5) * spreadRadius;
-            particlePositions[i * 3 + 1] = position.y + (Math.random() - 0.5) * spreadRadius;
+            particlePositions[i * 3 + 1] = position.y + (Math.random() - 0.5) * spreadRadius * 0.5; // Flatter for terrain
             particlePositions[i * 3 + 2] = position.z + (Math.random() - 0.5) * spreadRadius;
             
-            // Random size for each particle - larger for aircraft
-            particleSizes[i] = isAircraft ? 
-                (5 + Math.random() * 7) : // Larger particles for aircraft (2x)
-                (3 + Math.random() * 4);  // Normal size for balloons
+            // Random size for each particle - smaller for terrain
+            particleSizes[i] = isTerrain ? 
+                (2 + Math.random() * 3) : (isAircraft ? 
+                    (5 + Math.random() * 7) : 
+                    (3 + Math.random() * 4));
             
             // Color with slight variation
-            const colorVariation = 0.2;
+            const colorVariation = isTerrain ? 0.15 : 0.2;
             const color = baseColor.clone();
             color.r += (Math.random() - 0.5) * colorVariation;
             color.g += (Math.random() - 0.5) * colorVariation;
@@ -105,13 +112,21 @@ class EffectsSystem {
             particleColors[i * 3 + 2] = color.b;
             
             // Random velocity in all directions
-            // Increase speed for aircraft explosions
-            const speed = isAircraft ? 
-                (10 + Math.random() * 25) : // 2x faster for aircraft
-                (5 + Math.random() * 15);   // Normal speed for balloons
+            // For terrain, create more outward dust effect with less upward movement
+            let speed, elevation;
+            if (isTerrain) {
+                speed = 4 + Math.random() * 8; // Slower for terrain
+                // More horizontal distribution for dust
+                elevation = (Math.random() * Math.PI / 4) - Math.PI / 8; // -22.5 to +22.5 degrees
+            } else if (isAircraft) {
+                speed = 10 + Math.random() * 25;
+                elevation = Math.random() * Math.PI - Math.PI/2;
+            } else {
+                speed = 5 + Math.random() * 15;
+                elevation = Math.random() * Math.PI - Math.PI/2;
+            }
                 
             const angle = Math.random() * Math.PI * 2;
-            const elevation = Math.random() * Math.PI - Math.PI/2;
             
             const velocity = new THREE.Vector3(
                 Math.cos(angle) * Math.cos(elevation) * speed,
@@ -134,9 +149,9 @@ class EffectsSystem {
         
         // Create material
         const particleMaterial = new THREE.PointsMaterial({
-            size: isAircraft ? 10 : 5, // 2x larger base size for aircraft
-            map: this.particleTexture,
-            blending: THREE.AdditiveBlending,
+            size: isTerrain ? 6 : (isAircraft ? 10 : 5), // Smaller size for terrain
+            map: isTerrain ? this.smokeTexture : this.particleTexture,
+            blending: isTerrain ? THREE.NormalBlending : THREE.AdditiveBlending, // Normal blending for dust
             depthWrite: false,
             transparent: true,
             vertexColors: true
@@ -147,14 +162,14 @@ class EffectsSystem {
         this.scene.add(particleSystem);
         
         // Add hit marker (a ring that expands)
-        // Make the ring larger for aircraft hits
-        const ringRadius = isAircraft ? 2 : 1;
-        const ringThickness = isAircraft ? 4 : 2;
+        // Make the ring smaller for terrain hits
+        const ringRadius = isTerrain ? 1 : (isAircraft ? 2 : 1);
+        const ringThickness = isTerrain ? 2 : (isAircraft ? 4 : 2);
         const ringGeometry = new THREE.RingGeometry(ringRadius, ringRadius + ringThickness, 16);
         const ringMaterial = new THREE.MeshBasicMaterial({
-            color: isAircraft ? 0xff0000 : 0xffcc00,
+            color: isTerrain ? 0xcccccc : (isAircraft ? 0xff0000 : 0xffcc00),
             transparent: true,
-            opacity: 0.7,
+            opacity: isTerrain ? 0.3 : 0.7, // More transparent for terrain
             side: THREE.DoubleSide
         });
         
@@ -172,8 +187,9 @@ class EffectsSystem {
             ring: ring,
             ringScale: 1,
             lifetime: 0,
-            maxLifetime: isAircraft ? 1.5 : 1.2, // Longer lifetime for aircraft explosions
-            isAircraft: isAircraft
+            maxLifetime: isTerrain ? 0.8 : (isAircraft ? 1.5 : 1.2), // Shorter lifetime for terrain
+            isAircraft: isAircraft,
+            isTerrain: isTerrain
         });
         
         // Return true to indicate success
@@ -487,11 +503,29 @@ class EffectsSystem {
                     positions[j * 3 + 1] += effect.velocities[j].y * deltaTime;
                     positions[j * 3 + 2] += effect.velocities[j].z * deltaTime;
                     
-                    // Add gravity
-                    effect.velocities[j].y -= 9.8 * deltaTime;
-                    
-                    // Gradually reduce size
-                    sizes[j] *= 0.98;
+                    // For terrain hits, apply different physics - more horizontal, less vertical
+                    if (effect.isTerrain) {
+                        // Lighter gravity for terrain dust
+                        effect.velocities[j].y -= 5 * deltaTime;
+                        
+                        // Keep particles close to the ground
+                        if (positions[j * 3 + 1] < 0.1) {
+                            positions[j * 3 + 1] = 0.1 + Math.random() * 0.2;
+                            // Almost no bounce
+                            effect.velocities[j].y = Math.abs(effect.velocities[j].y) * 0.1;
+                            // Slow down horizontal movement over time
+                            effect.velocities[j].x *= 0.98;
+                            effect.velocities[j].z *= 0.98;
+                        }
+                        
+                        // Reduce sizes more quickly for dust
+                        sizes[j] *= 0.97;
+                    } else {
+                        // Regular gravity for other effects
+                        effect.velocities[j].y -= 9.8 * deltaTime;
+                        // Gradually reduce size
+                        sizes[j] *= 0.98;
+                    }
                 }
                 
                 // Update the ring (expand and fade)
@@ -500,12 +534,13 @@ class EffectsSystem {
                 // Make the ring face the camera
                 effect.ring.lookAt(camera.position);
                 
-                // Increase ring size
-                const newScale = 1 + progress * 15;
+                // Increase ring size - smaller expansion for terrain explosions
+                const expansionRate = effect.isTerrain ? 8 : (effect.isAircraft ? 15 : 10);
+                const newScale = 1 + progress * expansionRate;
                 effect.ring.scale.set(newScale, newScale, newScale);
                 
                 // Fade out ring
-                effect.ring.material.opacity = 0.7 * (1 - progress);
+                effect.ring.material.opacity = (effect.isTerrain ? 0.3 : 0.7) * (1 - progress);
                 
                 // Mark attributes as needing update
                 effect.particles.geometry.attributes.position.needsUpdate = true;

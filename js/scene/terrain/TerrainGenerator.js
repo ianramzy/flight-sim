@@ -534,6 +534,36 @@ class TerrainGenerator {
             heightScale: this.terrainHeightScale
         };
     }
+    
+    // Method to get terrain height at a specific world position
+    getHeightAt(worldX, worldZ) {
+        // Check if we have height map data
+        if (!this.heightMap || !this.resolution || !this.groundSize) {
+            console.warn('Height map data not available');
+            return 0;
+        }
+        
+        // Convert world position to heightmap coordinates
+        const halfSize = this.groundSize / 2;
+        const normalizedX = (worldX + halfSize) / this.groundSize;
+        const normalizedZ = (worldZ + halfSize) / this.groundSize;
+        
+        // Convert to height map indices
+        const heightMapX = Math.floor(normalizedX * (this.resolution - 1));
+        const heightMapZ = Math.floor(normalizedZ * (this.resolution - 1));
+        
+        // Check if within bounds
+        if (heightMapX < 0 || heightMapX >= this.resolution || 
+            heightMapZ < 0 || heightMapZ >= this.resolution) {
+            return 0; // Return 0 for out of bounds
+        }
+        
+        // Get height from height map
+        const heightValue = this.heightMap[heightMapZ][heightMapX];
+        
+        // Apply height scale
+        return heightValue * this.terrainHeightScale;
+    }
 }
 
 export { TerrainGenerator }; 
